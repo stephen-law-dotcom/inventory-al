@@ -177,8 +177,13 @@
             font-weight: 700;
         }
 
+        .form-field {
+            display: grid;
+            gap: 7px;
+        }
+
         input[type="email"],
-        input[type="password"] {
+        input[name="password"] {
             width: 100%;
             min-height: 46px;
             padding: 11px 12px;
@@ -194,9 +199,67 @@
         input::placeholder { color: #98a5af; }
 
         input[type="email"]:focus,
-        input[type="password"]:focus {
+        input[name="password"]:focus {
             border-color: var(--primary);
             box-shadow: 0 0 0 3px rgba(7, 132, 125, .12);
+        }
+
+        .password-field {
+            position: relative;
+            display: block;
+        }
+
+        .password-field input {
+            padding-right: 52px;
+        }
+
+        .password-toggle {
+            position: absolute;
+            top: 50%;
+            right: 7px;
+            width: 38px;
+            height: 38px;
+            padding: 0;
+            display: grid;
+            place-items: center;
+            transform: translateY(-50%);
+            border: 0;
+            border-radius: 4px;
+            background: transparent;
+            color: #5f7284;
+            cursor: pointer;
+        }
+
+        .password-toggle:hover {
+            background: #eef7f6;
+            color: var(--primary);
+        }
+
+        .password-toggle:focus-visible {
+            outline: 2px solid var(--primary);
+            outline-offset: 1px;
+        }
+
+        .password-toggle svg {
+            width: 20px;
+            height: 20px;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .password-toggle .eye-off-icon {
+            display: none;
+        }
+
+        .password-toggle[aria-pressed="true"] .eye-icon {
+            display: none;
+        }
+
+        .password-toggle[aria-pressed="true"] .eye-off-icon {
+            display: block;
         }
 
         .remember {
@@ -329,10 +392,32 @@
                     <input id="email" type="email" name="email" value="{{ old('email') }}" required autofocus autocomplete="email" placeholder="nama@perusahaan.com">
                 </label>
 
-                <label for="password">
-                    Password
-                    <input id="password" type="password" name="password" required autocomplete="current-password" placeholder="Masukkan password">
-                </label>
+                <div class="form-field">
+                    <label for="password">Password</label>
+                    <span class="password-field">
+                        <input id="password" type="password" name="password" required autocomplete="current-password" placeholder="Masukkan password">
+                        <button
+                            id="password-toggle"
+                            class="password-toggle"
+                            type="button"
+                            aria-label="Tampilkan password"
+                            aria-controls="password"
+                            aria-pressed="false"
+                            title="Tampilkan password"
+                        >
+                            <svg class="eye-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M2.06 12.35a1 1 0 0 1 0-.7C3.78 7.6 7.5 5 12 5s8.22 2.6 9.94 6.65a1 1 0 0 1 0 .7C20.22 16.4 16.5 19 12 19s-8.22-2.6-9.94-6.65Z" />
+                                <circle cx="12" cy="12" r="3" />
+                            </svg>
+                            <svg class="eye-off-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="m2 2 20 20" />
+                                <path d="M6.71 6.71C4.68 7.9 3.08 9.62 2.06 11.65a1 1 0 0 0 0 .7C3.78 16.4 7.5 19 12 19c1.54 0 2.96-.3 4.22-.84" />
+                                <path d="M10.73 5.08C11.14 5.03 11.56 5 12 5c4.5 0 8.22 2.6 9.94 6.65a1 1 0 0 1 0 .7 12.1 12.1 0 0 1-2.22 3.24" />
+                                <path d="M14.12 14.12A3 3 0 0 1 9.88 9.88" />
+                            </svg>
+                        </button>
+                    </span>
+                </div>
 
                 <label class="remember" for="remember">
                     <input id="remember" type="checkbox" name="remember" value="1" @checked(old('remember'))>
@@ -346,5 +431,20 @@
         </div>
     </section>
 </main>
+
+<script>
+    const passwordInput = document.getElementById('password');
+    const passwordToggle = document.getElementById('password-toggle');
+
+    passwordToggle?.addEventListener('click', () => {
+        const willShowPassword = passwordInput.type === 'password';
+        const buttonLabel = willShowPassword ? 'Sembunyikan password' : 'Tampilkan password';
+
+        passwordInput.type = willShowPassword ? 'text' : 'password';
+        passwordToggle.setAttribute('aria-pressed', String(willShowPassword));
+        passwordToggle.setAttribute('aria-label', buttonLabel);
+        passwordToggle.setAttribute('title', buttonLabel);
+    });
+</script>
 </body>
 </html>

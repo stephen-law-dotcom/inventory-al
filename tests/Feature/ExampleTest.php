@@ -2,9 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Models\ActivityLog;
 use App\Models\Camp;
 use App\Models\CampStock;
 use App\Models\Company;
+use App\Models\CreditNote;
 use App\Models\GoodsReceipt;
 use App\Models\GoodsReceiptItem;
 use App\Models\InventoryItem;
@@ -15,14 +17,17 @@ use App\Models\PurchaseRequest;
 use App\Models\PurchaseRequestItem;
 use App\Models\Role;
 use App\Models\SiteDispatch;
-use App\Models\StockOpnameItem;
 use App\Models\StockOpname;
+use App\Models\StockOpnameItem;
 use App\Models\SystemNotification;
 use App\Models\Unit;
 use App\Models\UnitOfMeasure;
 use App\Models\User;
 use App\Models\Vendor;
+use App\Models\VendorQuotation;
+use App\Services\DocumentNumberService;
 use App\Services\InventoryIntegrityService;
+use App\Services\MasterDataTransferService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -371,7 +376,7 @@ class ExampleTest extends TestCase
                 ->assertHeader('content-disposition');
         }
 
-        $transfer = app(\App\Services\MasterDataTransferService::class);
+        $transfer = app(MasterDataTransferService::class);
         foreach (['companies', 'camps', 'vendors', 'units', 'item-categories', 'items', 'uoms', 'users', 'roles'] as $type) {
             $export = $transfer->export($type);
             $rows = collect($export['rows'])->map(fn ($row) => array_combine($export['headings'], $row));
@@ -656,7 +661,7 @@ class ExampleTest extends TestCase
         $units = Unit::take(2)->get();
         $items = InventoryItem::take(2)->get();
         $differentUom = UnitOfMeasure::where('code', '!=', $items[0]->uom)->firstOrFail();
-        $requestItemCount = \App\Models\PurchaseRequestItem::count();
+        $requestItemCount = PurchaseRequestItem::count();
 
         $this->actingAs($user)
             ->post(route('purchase-requests.store'), [
@@ -689,7 +694,7 @@ class ExampleTest extends TestCase
             'estimated_total' => 0,
         ]);
 
-        $this->assertSame($requestItemCount + 2, \App\Models\PurchaseRequestItem::count());
+        $this->assertSame($requestItemCount + 2, PurchaseRequestItem::count());
         $this->assertDatabaseHas('purchase_request_items', ['unit_id' => $units[0]->id]);
         $this->assertDatabaseHas('purchase_request_items', ['unit_id' => $units[1]->id]);
         $this->assertDatabaseHas('purchase_request_items', [
@@ -698,9 +703,9 @@ class ExampleTest extends TestCase
             'uom' => $items[0]->uom,
         ]);
 
-        $purchaseRequest = \App\Models\PurchaseRequest::where('requested_by', $user->name)->latest('id')->firstOrFail();
+        $purchaseRequest = PurchaseRequest::where('requested_by', $user->name)->latest('id')->firstOrFail();
         $companyCode = str_contains(strtolower($purchaseRequest->camp->company_name), 'adimitra') ? 'AML-OR' : 'JP-OR';
-        $this->assertMatchesRegularExpression('/^\d{3}\/' . preg_quote($companyCode, '/') . '\/' . now()->format('y') . '$/', $purchaseRequest->number);
+        $this->assertMatchesRegularExpression('/^\d{3}\/'.preg_quote($companyCode, '/').'\/'.now()->format('y').'$/', $purchaseRequest->number);
 
         $this->actingAs($user)
             ->post(route('purchase-requests.post', $purchaseRequest))
@@ -814,7 +819,7 @@ class ExampleTest extends TestCase
         ])->assertSessionHas('success');
 
         $purchaseRequest->refresh();
-        $targetCode = \App\Services\DocumentNumberService::orderRequestCompanyCode($targetCamp);
+        $targetCode = DocumentNumberService::orderRequestCompanyCode($targetCamp);
 
         $this->assertNotSame($oldNumber, $purchaseRequest->number);
         $this->assertStringContainsString('/'.$targetCode.'/', $purchaseRequest->number);
@@ -888,7 +893,7 @@ class ExampleTest extends TestCase
 
         $purchaseRequest = PurchaseRequest::where('requested_by', $user->name)->latest('id')->firstOrFail();
         $requestItem = $purchaseRequest->items()->firstOrFail();
-        $quotationCount = \App\Models\VendorQuotation::count();
+        $quotationCount = VendorQuotation::count();
 
         $this->actingAs($user)
             ->post(route('quotations.store', $requestItem), [
@@ -899,7 +904,7 @@ class ExampleTest extends TestCase
             ])
             ->assertSessionHas('error');
 
-        $this->assertSame($quotationCount, \App\Models\VendorQuotation::count());
+        $this->assertSame($quotationCount, VendorQuotation::count());
 
         $this->actingAs($user)->post(route('request-items.approve-equipment', $requestItem));
         $this->actingAs($user)->post(route('request-items.approve-ppic', $requestItem));
@@ -1692,7 +1697,7 @@ class ExampleTest extends TestCase
         $unit = Unit::firstOrFail();
         $item = InventoryItem::firstOrFail();
         $vendors = Vendor::take(2)->get();
-        $quotationCount = \App\Models\VendorQuotation::count();
+        $quotationCount = VendorQuotation::count();
 
         $this->actingAs($user)
             ->post(route('purchase-requests.store'), [
@@ -1763,7 +1768,7 @@ class ExampleTest extends TestCase
             ])
             ->assertSessionHas('success');
 
-        $this->assertSame($quotationCount + 3, \App\Models\VendorQuotation::count());
+        $this->assertSame($quotationCount + 3, VendorQuotation::count());
         $this->assertDatabaseHas('vendor_quotations', [
             'purchase_request_item_id' => $requestItem->id,
             'vendor_id' => $vendors[0]->id,
@@ -1782,10 +1787,10 @@ class ExampleTest extends TestCase
             ->assertSee('Pilih Vendor')
             ->assertSee('Simpan Alokasi Vendor');
 
-        $manualQuotation = \App\Models\VendorQuotation::where('purchase_request_item_id', $requestItem->id)
+        $manualQuotation = VendorQuotation::where('purchase_request_item_id', $requestItem->id)
             ->where('brand_name', 'Brand Pembanding')
             ->firstOrFail();
-        $economicQuotation = \App\Models\VendorQuotation::where('purchase_request_item_id', $requestItem->id)
+        $economicQuotation = VendorQuotation::where('purchase_request_item_id', $requestItem->id)
             ->where('brand_name', 'Brand Ekonomis')
             ->firstOrFail();
 
@@ -2121,7 +2126,7 @@ class ExampleTest extends TestCase
             ->assertSessionHas('error');
         $this->assertSame(1, $requestItem->quotations()->count());
 
-        $rejectionLog = \App\Models\ActivityLog::where('event', 'procurement_request.rejected')
+        $rejectionLog = ActivityLog::where('event', 'procurement_request.rejected')
             ->where('subject_id', $requestItem->id)
             ->latest('id')
             ->firstOrFail();
@@ -2300,7 +2305,7 @@ class ExampleTest extends TestCase
             ->get(route('stock'))
             ->assertStatus(200)
             ->assertSee('Stok')
-            ->assertDontSee('href="' . route('requests') . '"', false);
+            ->assertDontSee('href="'.route('requests').'"', false);
 
         $this->actingAs($campUser)->get(route('dashboard'))->assertForbidden();
         $this->actingAs($campUser)->get(route('requests'))->assertForbidden();
@@ -2829,7 +2834,7 @@ class ExampleTest extends TestCase
         $stockBefore = $item->stock_on_hand;
 
         $purchaseRequest = PurchaseRequest::create([
-            'number' => '002/AML-OR/' . now()->format('y'),
+            'number' => '002/AML-OR/'.now()->format('y'),
             'camp_id' => $camp->id,
             'requested_at' => now()->toDateString(),
             'requested_by' => 'Gudang Retur Test',
@@ -2931,7 +2936,7 @@ class ExampleTest extends TestCase
             'status' => 'goods_received',
         ]);
 
-        $creditNote = \App\Models\CreditNote::where('purchase_order_id', $purchaseOrder->id)->firstOrFail();
+        $creditNote = CreditNote::where('purchase_order_id', $purchaseOrder->id)->firstOrFail();
         $this->assertMatchesRegularExpression('/^\d{3}\/AML-CN\/\d{2}$/', $creditNote->number);
         $this->actingAs($user)
             ->put(route('credit-notes.update', $creditNote), [
@@ -2994,7 +2999,7 @@ class ExampleTest extends TestCase
             'id' => $item->id,
             'stock_on_hand' => $stockBefore,
         ]);
-        $retryItem = \App\Models\PurchaseRequestItem::where('source_credit_note_item_id', $creditNoteItem->id)->firstOrFail();
+        $retryItem = PurchaseRequestItem::where('source_credit_note_item_id', $creditNoteItem->id)->firstOrFail();
         $this->assertSame('ready_for_quotation', $retryItem->status);
         $this->assertSame('draft', $retryItem->procurement_approval_status);
         $this->assertSame(2, (int) $retryItem->quantity);
@@ -3010,7 +3015,7 @@ class ExampleTest extends TestCase
             ->assertSee('Pengajuan ulang dari '.$creditNote->number);
 
         $newVendor = Vendor::whereKeyNot($vendor->id)->firstOrFail();
-        $quotation = \App\Models\VendorQuotation::create([
+        $quotation = VendorQuotation::create([
             'purchase_request_item_id' => $retryItem->id,
             'vendor_id' => $newVendor->id,
             'brand_name' => 'Retry Brand',
@@ -3037,7 +3042,7 @@ class ExampleTest extends TestCase
         $this->assertDatabaseHas('purchase_orders', [
             'purchase_request_id' => $purchaseRequest->id,
             'vendor_id' => $newVendor->id,
-            'number' => '002-R/AML-OR/' . now()->format('y'),
+            'number' => '002-R/AML-OR/'.now()->format('y'),
             'status' => 'draft',
         ]);
     }
@@ -3126,7 +3131,7 @@ class ExampleTest extends TestCase
             ])
             ->assertSessionHas('success');
 
-        $creditNote = \App\Models\CreditNote::where('source_type', 'manual_return')->latest()->firstOrFail();
+        $creditNote = CreditNote::where('source_type', 'manual_return')->latest()->firstOrFail();
         $this->assertDatabaseHas('inventory_items', [
             'id' => $item->id,
             'stock_on_hand' => $stockBefore,
@@ -3170,7 +3175,7 @@ class ExampleTest extends TestCase
         $items = InventoryItem::orderBy('id')->take(3)->get();
 
         $purchaseRequest = PurchaseRequest::create([
-            'number' => '001/AML-OR/' . now()->format('y'),
+            'number' => '001/AML-OR/'.now()->format('y'),
             'camp_id' => $camp->id,
             'requested_at' => now()->toDateString(),
             'requested_by' => 'Purchasing Test',
@@ -3188,7 +3193,7 @@ class ExampleTest extends TestCase
                 'inventory_item_id' => $item->id,
                 'quantity' => 2,
                 'uom' => $item->uom,
-                'specification' => 'Spesifikasi testing ' . $item->sku,
+                'specification' => 'Spesifikasi testing '.$item->sku,
                 'status' => 'vendor_selected',
                 'equipment_approval_status' => 'approved',
                 'ppic_approval_status' => 'approved',
@@ -3248,8 +3253,8 @@ class ExampleTest extends TestCase
         $this->assertCount(2, $createdOrders);
         $this->assertEqualsCanonicalizing($vendors->pluck('id')->all(), $createdOrders->pluck('vendor_id')->all());
         $this->assertEqualsCanonicalizing([
-            '001-1/AML-OR/' . now()->format('y'),
-            '001-2/AML-OR/' . now()->format('y'),
+            '001-1/AML-OR/'.now()->format('y'),
+            '001-2/AML-OR/'.now()->format('y'),
         ], $createdOrders->pluck('number')->all());
         $this->assertDatabaseHas('purchase_request_items', ['id' => $requestItems[0]->id, 'status' => 'po_created']);
         $this->assertDatabaseHas('purchase_request_items', ['id' => $requestItems[1]->id, 'status' => 'po_created']);
@@ -3438,7 +3443,7 @@ class ExampleTest extends TestCase
             ->value('quantity'));
         $this->assertEquals($reservedBeforeIssue, (float) $item->fresh()->stock_reserved);
         $siteReceipt = $issueDispatch->siteReceipts()->latest('id')->firstOrFail();
-        $autoCreditNote = \App\Models\CreditNote::where('site_receipt_id', $siteReceipt->id)->firstOrFail();
+        $autoCreditNote = CreditNote::where('site_receipt_id', $siteReceipt->id)->firstOrFail();
         $this->assertSame('draft', $autoCreditNote->status);
         $this->assertSame('site_request', $autoCreditNote->source_type);
         $this->assertDatabaseHas('credit_note_items', [
@@ -3476,7 +3481,7 @@ class ExampleTest extends TestCase
         $vendors = Vendor::take(2)->get();
 
         $purchaseRequest = PurchaseRequest::create([
-            'number' => '002/AML-OR/' . now()->format('y'),
+            'number' => '002/AML-OR/'.now()->format('y'),
             'camp_id' => $camp->id,
             'unit_id' => $unit->id,
             'requested_at' => now()->toDateString(),

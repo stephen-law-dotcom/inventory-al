@@ -1,13 +1,36 @@
 <IfModule mod_rewrite.c>
+    <IfModule mod_negotiation.c>
+        Options -MultiViews -Indexes
+    </IfModule>
+
     RewriteEngine On
 
-    # Hostinger serves public_html, while Laravel's public files live here.
+    # Serve public assets without exposing /public in the browser URL.
     RewriteRule ^public(?:/|$) - [L]
-    RewriteRule ^(.*)$ public/$1 [L,QSA]
+    RewriteRule ^(assets|build|storage)/(.*)$ public/$1/$2 [L,QSA]
+    RewriteRule ^(favicon\.ico|favicon\.svg|robots\.txt)$ public/$1 [L,QSA]
+
+    # Prevent direct access to Laravel application internals.
+    RewriteRule ^(app|bootstrap|config|database|resources|routes|tests|vendor|node_modules)(?:/|$) - [F,L,NC]
+
+    # Forward authorization headers to Laravel.
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+    RewriteCond %{HTTP:x-xsrf-token} .
+    RewriteRule .* - [E=HTTP_X_XSRF_TOKEN:%{HTTP:X-XSRF-Token}]
+
+    # Redirect trailing slashes when the target is not a directory.
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_URI} (.+)/$
+    RewriteRule ^ %1 [L,R=301]
+
+    # Send application routes to the root front controller.
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule ^ index.php [L]
 </IfModule>
 
-<FilesMatch "^\.env">
+<FilesMatch "^(\.env.*|artisan|composer\.(json|lock)|package(-lock)?\.json|phpunit\.xml|vite\.config\.js|README\.md)$">
     Require all denied
 </FilesMatch>
-
-Options -Indexes

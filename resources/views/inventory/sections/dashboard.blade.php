@@ -9,20 +9,70 @@
                     $canViewDispatches = $currentUser->hasPermission('dispatches.view');
                     $canViewUsage = $currentUser->hasPermission('usage.view');
                     $canViewStock = $currentUser->hasPermission('stock.view') || $currentUser->hasPermission('stock_opname.view');
-                    $isCampScoped = ! $currentUser->isAdmin() && count($currentUser->scopedCampIds()) > 0;
+                    $isCampScoped = in_array($currentUser->role?->slug, ['camp', 'manager_camp'], true)
+                        && count($currentUser->scopedCampIds()) > 0;
                     $requestStatusChart = $purchaseRequests->groupBy('status')->map->count();
                     $maxRequestStatus = max(1, $requestStatusChart->max() ?? 1);
-                    $dashboardStocks = $isCampScoped
-                        ? $campStocks->groupBy('inventory_item_id')->map(function ($stocks) {
-                            $item = $stocks->first()->inventoryItem;
+                    $campQuantityByItem = $campStocks->groupBy('inventory_item_id')->map->sum('quantity');
+                    $inventoryRows = $items->map(function ($item) use ($isCampScoped, $campQuantityByItem) {
+                        $minimum = $item->minimumStockLevel();
+                        $isPlanned = $item->usesInventoryPlanning();
+                        $eoq = $isPlanned ? (int) ceil($item->eoq()) : null;
+                        $parameterIncomplete = $isPlanned && ($eoq <= 0 || $minimum <= 0);
 
-                            return (object) ['item' => $item, 'quantity' => (float) $stocks->sum('quantity')];
-                        })->values()
-                        : $items->map(fn ($item) => (object) ['item' => $item, 'quantity' => (float) $item->stock_on_hand]);
-                    $criticalStocks = $dashboardStocks->filter(fn ($stock) => $stock->quantity <= $stock->item->minimumStockLevel());
-                    $criticalCount = $criticalStocks->count();
-                    $safeCount = max(0, $dashboardStocks->count() - $criticalCount);
-                    $criticalAngle = $dashboardStocks->count() > 0 ? round(($criticalCount / $dashboardStocks->count()) * 360) : 0;
+                        if ($isCampScoped) {
+                            $position = (float) ($campQuantityByItem[$item->id] ?? 0);
+
+                            return (object) [
+                                'item' => $item,
+                                'position' => $position,
+                                'minimum' => $minimum,
+                                'eoq' => $eoq,
+                                'recommendation' => 0,
+                                'status' => $position <= $minimum ? 'needs_distribution' : 'safe',
+                                'parameter_incomplete' => $parameterIncomplete,
+                            ];
+                        }
+
+                        $warehouse = $item->warehouseStock();
+                        $camp = $item->campStock();
+                        $transit = $item->inTransitStock();
+                        $onOrder = $item->outstandingPurchaseOrderQuantity();
+                        $available = $warehouse + $camp;
+                        $position = $available + $transit + $onOrder;
+                        $status = match (true) {
+                            $position <= $minimum => 'needs_order',
+                            $available + $transit <= $minimum && $onOrder > 0 => 'covered_po',
+                            $available <= $minimum && $transit > 0 => 'in_transit',
+                            default => 'safe',
+                        };
+
+                        return (object) [
+                            'item' => $item,
+                            'position' => $position,
+                            'minimum' => $minimum,
+                            'eoq' => $eoq,
+                            'recommendation' => $status === 'needs_order' ? $item->recommendedOrderQuantity() : 0,
+                            'status' => $status,
+                            'parameter_incomplete' => $parameterIncomplete,
+                        ];
+                    })->values();
+                    $criticalCount = $inventoryRows->whereIn('status', ['needs_order', 'needs_distribution'])->count();
+                    $coveredPoCount = $inventoryRows->where('status', 'covered_po')->count();
+                    $inTransitCount = $inventoryRows->where('status', 'in_transit')->count();
+                    $incompleteParameterCount = $inventoryRows->where('parameter_incomplete', true)->count();
+                    $safeCount = $inventoryRows->where('status', 'safe')->count();
+                    $criticalAngle = $inventoryRows->count() > 0 ? round(($criticalCount / $inventoryRows->count()) * 360) : 0;
+                    $inventoryReminderRows = $inventoryRows
+                        ->filter(fn ($row) => $row->status !== 'safe' || $row->parameter_incomplete)
+                        ->sortBy(fn ($row) => [
+                            ['needs_order' => 0, 'needs_distribution' => 0, 'covered_po' => 1, 'in_transit' => 2][$row->status] ?? 9,
+                            $row->position,
+                        ])
+                        ->take(10);
+                    $stockReminderRoute = $currentUser->hasPermission('reports.view')
+                        ? route('reports.show', 'stock')
+                        : ($currentUser->hasPermission('stock.view') ? route('stock') : route('stock-opname'));
                     $usageTrend = collect(range(6, 0))->map(function ($daysAgo) use ($usageLogs) {
                         $date = now()->subDays($daysAgo);
 
@@ -58,7 +108,6 @@
                     $openPoValue = $activePo->sum('grand_total');
                     $monthPoValue = $purchaseOrders->filter(fn ($po) => $po->ordered_at && \Illuminate\Support\Carbon::parse($po->ordered_at)->isSameMonth(now()))->sum('grand_total');
                     $monthUsageQty = $usageLogs->filter(fn ($log) => $log->used_at->isSameMonth(now()))->sum('quantity');
-                    $criticalItems = $criticalStocks->sortBy('quantity')->take(8);
                     $topUsageItems = $usageLogs
                         ->groupBy('inventory_item_id')
                         ->map(fn ($logs) => [
@@ -75,6 +124,7 @@
                         ['code' => 'GR', 'label' => 'Penerimaan Gudang', 'desc' => 'PO submitted dan menunggu barang diterima.', 'count' => $receivingPo->count(), 'route' => route('receipts', $companyQuery), 'allowed' => $currentUser->hasPermission('receipts.view')],
                         ['code' => 'CN', 'label' => 'Credit Note', 'desc' => 'Barang bermasalah menunggu credit/refund atau pengajuan vendor ulang.', 'count' => $openCreditNotes->count(), 'route' => route('credit-notes', $companyQuery), 'allowed' => $currentUser->hasPermission('credit_notes.view')],
                         ['code' => 'SO', 'label' => 'Review Selisih Opname', 'desc' => 'Selisih hasil hitung fisik menunggu keputusan.', 'count' => $pendingToleranceReviews->count(), 'route' => route('stock-opname'), 'allowed' => $currentUser->hasPermission('stock_opname.view')],
+                        ['code' => 'ST', 'label' => $isCampScoped ? 'Stok Site Perlu Dipenuhi' : 'Rekomendasi Pembelian', 'desc' => $isCampScoped ? 'Stok site telah mencapai batas minimum.' : 'Posisi stok jaringan telah mencapai ROP/minimum.', 'count' => $criticalCount, 'route' => $stockReminderRoute, 'allowed' => $canViewStock],
                     ])->filter(fn ($task) => $task['allowed'] && $task['count'] > 0)->values();
                     $pipeline = collect([
                         ['label' => 'OR Aktif', 'count' => $purchaseRequests->whereNotIn('status', ['draft', 'rejected', 'goods_received'])->count(), 'allowed' => $canViewRequests],
@@ -108,7 +158,7 @@
                         <div class="hero-panel">
                             @if ($canViewRequests)<div><span>OR aktif</span><strong>{{ $purchaseRequests->whereNotIn('status', ['draft', 'rejected', 'goods_received'])->count() }}</strong></div>@endif
                             @if ($canViewPurchaseOrders)<div><span>PO aktif</span><strong>{{ $activePo->count() }}</strong></div>@endif
-                            @if ($canViewStock)<div><span>Stok kritis</span><strong>{{ $criticalCount }}</strong></div>@endif
+                            @if ($canViewStock)<div><span>{{ $isCampScoped ? 'Perlu dipenuhi' : 'Perlu order' }}</span><strong>{{ $criticalCount }}</strong></div>@endif
                             @if (! $canViewRequests && ! $canViewPurchaseOrders && ! $canViewStock)<div><span>Pekerjaan aktif</span><strong>{{ $priorityTasks->sum('count') }}</strong></div>@endif
                         </div>
                     </section>
@@ -117,7 +167,7 @@
                         @if ($canViewRequests)<div class="kpi-card"><div class="kpi-label"><span>Total OR</span><span class="kpi-icon">OR</span></div><strong>{{ $purchaseRequests->count() }}</strong><small>{{ $purchaseRequests->where('status', 'draft')->count() }} draft, {{ $purchaseRequests->whereNotIn('status', ['draft', 'rejected'])->count() }} berjalan</small></div>@endif
                         <div class="kpi-card"><div class="kpi-label"><span>Worklist prioritas</span><span class="kpi-icon">WK</span></div><strong>{{ $priorityTasks->sum('count') }}</strong><small>Approval, vendor, PO, penerimaan, dan opname</small></div>
                         @if ($canViewPurchaseOrders)<div class="kpi-card"><div class="kpi-label"><span>PO berjalan</span><span class="kpi-icon">PO</span></div><strong>{{ $activePo->count() }}</strong><small>{{ $purchaseOrders->where('status', 'on_progress')->count() }} on progress, {{ $receivingPo->count() }} submitted/terima</small></div>@endif
-                        @if ($canViewStock)<div class="kpi-card"><div class="kpi-label"><span>Stok kritis</span><span class="kpi-icon">ST</span></div><strong>{{ $criticalCount }}</strong><small>{{ $safeCount }} item aman dari {{ $dashboardStocks->count() }} barang{{ $isCampScoped ? ' di site' : '' }}</small></div>@endif
+                        @if ($canViewStock)<div class="kpi-card"><div class="kpi-label"><span>{{ $isCampScoped ? 'Perlu dipenuhi' : 'Perlu order' }}</span><span class="kpi-icon">ST</span></div><strong>{{ $criticalCount }}</strong><small>{{ $safeCount }} aman dari {{ $inventoryRows->count() }} barang{{ $isCampScoped ? ' di site' : ' terpantau' }}</small></div>@endif
                         @if ($canSeePrices && $canViewPurchaseOrders)
                             <div class="kpi-card"><div class="kpi-label"><span>Nilai PO aktif</span><span class="kpi-icon">Rp</span></div><strong>Rp{{ number_format($openPoValue, 0, ',', '.') }}</strong><small>Bulan ini Rp{{ number_format($monthPoValue, 0, ',', '.') }}</small></div>
                         @elseif ($canViewUsage)
@@ -170,7 +220,7 @@
                                 <span class="pill">Live data</span>
                             </div>
                             <div class="insight-list" style="margin-top:12px">
-                                @if ($canViewStock)<div class="insight"><strong>{{ $criticalCount > 0 ? 'Ada stok yang perlu segera dicek' : 'Kondisi stok relatif aman' }}</strong><span>{{ $criticalCount }} item berada di titik reorder/minimum.</span></div>@endif
+                                @if ($canViewStock)<div class="insight"><strong>{{ $criticalCount > 0 ? ($isCampScoped ? 'Ada stok site yang perlu dipenuhi' : 'Ada rekomendasi pembelian') : 'Kondisi stok relatif aman' }}</strong><span>{{ $criticalCount }} item mencapai ROP/minimum, {{ $coveredPoCount }} tercakup PO, dan {{ $inTransitCount }} dalam perjalanan.</span></div>@endif
                                 @if ($canViewReceipts)<div class="insight"><strong>{{ $receivingPo->count() }} PO menunggu penerimaan</strong><span>Nomor faktur dicatat saat barang diterima gudang.</span></div>@endif
                                 @if ($canViewDispatches)<div class="insight"><strong>{{ $dispatches->where('status', 'sent')->count() }} pengiriman belum diterima site</strong></div>@endif
                                 @if ($currentUser->hasPermission('stock_opname.manage') && $pendingToleranceReviews->isNotEmpty())<div class="insight"><strong>{{ $pendingToleranceReviews->count() }} selisih opname perlu diperiksa</strong></div>@endif
@@ -204,13 +254,13 @@
                         <section class="chart-card">
                             <div class="chart-title">
                                 <strong>Kesehatan Stok</strong>
-                                <span class="pill {{ $criticalCount > 0 ? 'wait' : 'ok' }}">{{ $criticalCount }} kritis</span>
+                                <span class="pill {{ $criticalCount > 0 ? 'wait' : 'ok' }}">{{ $criticalCount }} perlu tindakan</span>
                             </div>
                             <div class="pie-wrap">
-                                <div class="pie-chart" style="--critical-angle: {{ $criticalAngle }}deg"><strong>{{ $dashboardStocks->count() }}</strong></div>
+                                <div class="pie-chart" style="--critical-angle: {{ $criticalAngle }}deg"><strong>{{ $inventoryRows->count() }}</strong></div>
                                 <div class="legend">
                                     <span><i style="background: var(--accent)"></i>Aman {{ $safeCount }}</span>
-                                    <span><i style="background: var(--danger)"></i>Kritis {{ $criticalCount }}</span>
+                                    <span><i style="background: var(--danger)"></i>Perlu tindakan {{ $criticalCount }}</span>
                                 </div>
                             </div>
                         </section>
@@ -283,36 +333,81 @@
                     </div>
                     @endif
 
-                    @if ($canViewStock || $canViewUsage)
-                    <div class="grid-2">
-                        @if ($canViewStock)
-                        <section>
-                            <h2>Stok Kritis</h2>
-                            <table class="mini-table">
-                                <thead><tr><th>Part Number</th><th>Barang</th><th>Stok</th><th>ROP/Min</th></tr></thead>
+                    @if ($canViewStock)
+                    <section class="inventory-reminder">
+                        <div class="chart-title">
+                            <div>
+                                <h2>{{ $isCampScoped ? 'Pengingat Persediaan Site' : 'Pengingat Pembelian' }}</h2>
+                                <p>{{ $isCampScoped ? 'Pemantauan stok pada site yang dapat Anda akses.' : 'Berdasarkan stok gudang, seluruh camp, perjalanan, dan sisa PO aktif.' }}</p>
+                            </div>
+                            <a class="button ghost" href="{{ $stockReminderRoute }}">Lihat Detail Stok</a>
+                        </div>
+                        <div class="inventory-reminder-summary">
+                            <div><span>{{ $isCampScoped ? 'Perlu dipenuhi' : 'Perlu order' }}</span><strong>{{ $criticalCount }}</strong></div>
+                            <div><span>Tercakup PO</span><strong>{{ $coveredPoCount }}</strong></div>
+                            <div><span>Dalam perjalanan</span><strong>{{ $inTransitCount }}</strong></div>
+                            <div><span>Parameter belum lengkap</span><strong>{{ $incompleteParameterCount }}</strong></div>
+                        </div>
+                        <div class="dashboard-table-wrap">
+                            <table class="mini-table inventory-reminder-table">
+                                <thead>
+                                    <tr>
+                                        <th>Part Number</th>
+                                        <th>Barang</th>
+                                        <th>{{ $isCampScoped ? 'Stok Site' : 'Posisi Stok' }}</th>
+                                        <th>ROP / Min</th>
+                                        <th>EOQ</th>
+                                        <th>Rekomendasi</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
                                 <tbody>
-                                @forelse ($criticalItems as $stock)
-                                    @php($item = $stock->item)
+                                @forelse ($inventoryReminderRows as $row)
+                                    @php
+                                        $item = $row->item;
+                                        $statusMeta = match ($row->status) {
+                                            'needs_order' => ['Perlu Order', 'bad'],
+                                            'needs_distribution' => ['Perlu Dipenuhi', 'bad'],
+                                            'covered_po' => ['Tercakup PO Aktif', 'ok'],
+                                            'in_transit' => ['Dalam Perjalanan', 'wait'],
+                                            default => ['Aman', 'ok'],
+                                        };
+                                        $itemDetailUrl = $currentUser->hasPermission('stock.view')
+                                            ? route('stock.items.review', $item)
+                                            : ($currentUser->hasPermission('stock_opname.view')
+                                                ? route('stock-opname.items.history', ['inventoryItem' => $item, 'from' => 'dashboard'])
+                                                : null);
+                                    @endphp
                                     <tr>
                                         <td>{{ $item->sku }}</td>
                                         <td>
-                                            @if ($currentUser->hasPermission('stock_opname.view'))
-                                                <a class="item-history-link" href="{{ route('stock-opname.items.history', ['inventoryItem' => $item, 'from' => 'dashboard']) }}">{{ $item->name }}</a>
+                                            @if ($itemDetailUrl)
+                                                <a class="item-history-link" href="{{ $itemDetailUrl }}">{{ $item->name }}</a>
                                             @else
                                                 {{ $item->name }}
                                             @endif
                                         </td>
-                                        <td><span class="pill bad">{{ number_format($stock->quantity, 0, ',', '.') }} {{ $item->uom }}</span></td>
-                                        <td>{{ $item->minimumStockLevel() }} {{ $item->uom }}</td>
+                                        <td class="stock-number"><strong>{{ number_format($row->position, 0, ',', '.') }}</strong> {{ $item->uom }}</td>
+                                        <td class="stock-number">{{ number_format($row->minimum, 0, ',', '.') }} {{ $item->uom }}</td>
+                                        <td class="stock-number">{{ $row->eoq !== null && $row->eoq > 0 ? number_format($row->eoq, 0, ',', '.').' '.$item->uom : '-' }}</td>
+                                        <td class="stock-number">{{ $row->recommendation > 0 ? number_format($row->recommendation, 0, ',', '.').' '.$item->uom : '-' }}</td>
+                                        <td>
+                                            <div class="inventory-statuses">
+                                                <span class="pill {{ $statusMeta[1] }}">{{ $statusMeta[0] }}</span>
+                                                @if ($row->parameter_incomplete)<span class="pill wait">Parameter EOQ/ROP belum lengkap</span>@endif
+                                            </div>
+                                        </td>
                                     </tr>
                                 @empty
-                                    <tr><td colspan="4">Tidak ada stok kritis.</td></tr>
+                                    <tr><td colspan="7">Tidak ada persediaan yang memerlukan tindakan.</td></tr>
                                 @endforelse
                                 </tbody>
                             </table>
-                        </section>
-                        @endif
-                        @if ($canViewUsage)
+                        </div>
+                    </section>
+                    @endif
+
+                    @if ($canViewUsage)
                         <section>
                             <h2>Pemakaian Tertinggi</h2>
                             <table class="mini-table">
@@ -330,8 +425,6 @@
                                 </tbody>
                             </table>
                         </section>
-                        @endif
-                    </div>
                     @endif
                 </div>
             @endif

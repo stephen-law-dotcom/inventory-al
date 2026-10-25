@@ -23,6 +23,11 @@ class InventoryItem extends Model
         return $this->hasMany(PurchaseRequestItem::class);
     }
 
+    public function purchaseOrderItems()
+    {
+        return $this->hasMany(PurchaseOrderItem::class);
+    }
+
     public function itemCategory()
     {
         return $this->belongsTo(ItemCategory::class);
@@ -164,14 +169,16 @@ class InventoryItem extends Model
             return $this->cachedOutstandingPurchaseOrderQuantity;
         }
 
-        $items = PurchaseOrderItem::with([
-            'purchaseOrder',
-            'goodsReceiptItems',
-            'dispatchItems.receiptItems',
-        ])
-            ->where('inventory_item_id', $this->id)
-            ->whereHas('purchaseOrder', fn ($query) => $query->whereIn('status', ['issued', 'partial_received']))
-            ->get();
+        $items = $this->relationLoaded('purchaseOrderItems')
+            ? $this->purchaseOrderItems->filter(fn (PurchaseOrderItem $item) => in_array($item->purchaseOrder?->status, ['issued', 'partial_received'], true))
+            : PurchaseOrderItem::with([
+                'purchaseOrder',
+                'goodsReceiptItems',
+                'dispatchItems.receiptItems',
+            ])
+                ->where('inventory_item_id', $this->id)
+                ->whereHas('purchaseOrder', fn ($query) => $query->whereIn('status', ['issued', 'partial_received']))
+                ->get();
 
         return $this->cachedOutstandingPurchaseOrderQuantity = (float) $items->sum(function (PurchaseOrderItem $item) {
             $received = $item->purchaseOrder?->delivery_destination === 'direct_site'

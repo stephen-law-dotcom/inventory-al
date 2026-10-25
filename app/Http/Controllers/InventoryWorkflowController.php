@@ -1382,6 +1382,19 @@ class InventoryWorkflowController extends Controller
                 ->get();
         }
 
+        $inventoryItemRelations = ['itemCategory'];
+        if ($activeMenu === 'dashboard') {
+            $inventoryItemRelations = array_merge($inventoryItemRelations, [
+                'purchaseOrderItems.purchaseOrder',
+                'purchaseOrderItems.goodsReceiptItems',
+                'purchaseOrderItems.dispatchItems.receiptItems',
+            ]);
+        }
+        $inventoryItems = InventoryItem::with($inventoryItemRelations)->withSum([
+            'usageLogs as usage_logs_sum_quantity' => fn ($query) => $query
+                ->whereDate('used_at', '>=', now()->subDays(365)->toDateString()),
+        ], 'quantity')->withSum('campStocks', 'quantity')->orderBy('name')->get();
+
         return view('inventory.index', array_merge([
             'activeMenu' => $activeMenu,
             'activeMaster' => $activeMaster,
@@ -1408,10 +1421,7 @@ class InventoryWorkflowController extends Controller
                 ->get(),
             'uoms' => UnitOfMeasure::orderBy('code')->get(),
             'itemCategories' => ItemCategory::orderBy('name')->get(),
-            'items' => InventoryItem::withSum([
-                'usageLogs as usage_logs_sum_quantity' => fn ($query) => $query
-                    ->whereDate('used_at', '>=', now()->subDays(365)->toDateString()),
-            ], 'quantity')->withSum('campStocks', 'quantity')->orderBy('name')->get(),
+            'items' => $inventoryItems,
             'purchaseRequests' => $purchaseRequests,
             'purchaseOrders' => $purchaseOrders,
             'creditNotes' => $creditNotes,

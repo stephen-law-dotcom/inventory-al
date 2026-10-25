@@ -509,6 +509,25 @@
         .insight span { color: var(--muted); font-size: 12px; }
         .mini-table th,
         .mini-table td { padding: 9px; font-size: 12px; }
+        .inventory-reminder .chart-title > div:first-child { display: grid; gap: 4px; }
+        .inventory-reminder .chart-title h2 { margin: 0; }
+        .inventory-reminder .chart-title p { margin: 0; color: var(--muted); font-size: 12px; }
+        .inventory-reminder-summary {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            margin: 14px 0;
+            border-top: 1px solid var(--line);
+            border-bottom: 1px solid var(--line);
+            background: #f8fbfc;
+        }
+        .inventory-reminder-summary > div { display: grid; gap: 4px; padding: 12px 14px; border-right: 1px solid var(--line); }
+        .inventory-reminder-summary > div:last-child { border-right: 0; }
+        .inventory-reminder-summary span { color: var(--muted); font-size: 11px; font-weight: 800; }
+        .inventory-reminder-summary strong { color: var(--ink); font-size: 21px; }
+        .dashboard-table-wrap { width: 100%; overflow-x: auto; }
+        .inventory-reminder-table { min-width: 850px; }
+        .inventory-reminder-table .stock-number { white-space: nowrap; text-align: right; }
+        .inventory-statuses { display: grid; justify-items: start; gap: 5px; }
         .activity-list { display: grid; gap: 10px; }
         .activity-item { display: grid; grid-template-columns: 10px minmax(0, 1fr); gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
         .activity-item:last-child { border-bottom: 0; }
@@ -975,6 +994,11 @@
             .kpi-grid {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
+            .inventory-reminder-summary {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+            .inventory-reminder-summary > div:nth-child(2) { border-right: 0; }
+            .inventory-reminder-summary > div:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
             .pipeline-grid {
                 grid-template-columns: repeat(3, minmax(0, 1fr));
             }
@@ -1006,6 +1030,11 @@
             .hero-panel { padding: 16px 18px; }
             .priority-card { grid-template-columns: 36px minmax(0, 1fr); }
             .priority-card .button { grid-column: 1 / -1; width: 100%; }
+            .inventory-reminder .chart-title { align-items: stretch; flex-direction: column; }
+            .inventory-reminder .chart-title .button { width: 100%; }
+            .inventory-reminder-summary { grid-template-columns: 1fr; }
+            .inventory-reminder-summary > div { border-right: 0; border-bottom: 1px solid var(--line); }
+            .inventory-reminder-summary > div:last-child { border-bottom: 0; }
             table { display: block; overflow-x: auto; }
             th, td { min-width: 130px; }
             .brand { grid-template-columns: 38px 1fr; }

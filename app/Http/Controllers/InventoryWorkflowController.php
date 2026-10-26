@@ -1213,6 +1213,16 @@ class InventoryWorkflowController extends Controller
             ->when($restrictToVisibleCamps && ! $visibleCampIds && ($companyIds || $campIds || $activeCompanyId), fn ($query) => $query->whereRaw('1 = 0'))
             ->latest();
 
+        if ($activeMenu === 'vendor-prices') {
+            $vendorPriceTab = in_array(request('tab'), ['approval', 'history'], true)
+                ? request('tab')
+                : 'active';
+            $purchaseRequestsQuery->whereHas(
+                'items',
+                fn ($query) => $this->applyVendorPriceTabFilter($query, $vendorPriceTab)
+            );
+        }
+
         if (in_array($activeMenu, ['requests', 'approvals', 'vendor-prices'], true)) {
             $this->applyPurchaseRequestFilters($purchaseRequestsQuery, $transactionFilters);
             $transactionPaginator = $purchaseRequestsQuery->paginate(20)->withQueryString();
@@ -1400,7 +1410,12 @@ class InventoryWorkflowController extends Controller
             'activeMaster' => $activeMaster,
             'companies' => $accessibleCompanies,
             'activeCompanyId' => $activeCompanyId,
-            'companyTabCounts' => $this->companyTabCounts($accessibleCompanies, $activeMenu, $user),
+            'companyTabCounts' => $this->companyTabCounts(
+                $accessibleCompanies,
+                $activeMenu,
+                $user,
+                in_array(request('tab'), ['approval', 'history'], true) ? request('tab') : 'active'
+            ),
             'transactionFilters' => $transactionFilters,
             'transactionPaginator' => $transactionPaginator,
             'camps' => $campsQuery->orderBy('name')->get(),
@@ -1674,13 +1689,13 @@ class InventoryWorkflowController extends Controller
         return $requestedCompanyId;
     }
 
-    private function companyTabCounts($companies, string $activeMenu, ?User $user): array
+    private function companyTabCounts($companies, string $activeMenu, ?User $user, string $activeTab = 'active'): array
     {
         $counts = [];
 
         foreach ($companies as $company) {
             $campIds = $this->companyCampIdsForUser((int) $company->id, $user);
-            $counts[$company->id] = $this->transactionCountForCompany($activeMenu, $campIds);
+            $counts[$company->id] = $this->transactionCountForCompany($activeMenu, $campIds, $activeTab);
         }
 
         $counts['all'] = collect($counts)->sum();
@@ -1701,7 +1716,7 @@ class InventoryWorkflowController extends Controller
             ->all();
     }
 
-    private function transactionCountForCompany(string $activeMenu, array $campIds): int
+    private function transactionCountForCompany(string $activeMenu, array $campIds, string $activeTab = 'active'): int
     {
         if (! $campIds) {
             return 0;
@@ -1714,12 +1729,9 @@ class InventoryWorkflowController extends Controller
                 ->count(),
             'vendor-prices' => PurchaseRequestItem::query()
                 ->whereHas('purchaseRequest', fn ($query) => $query->whereIn('camp_id', $campIds))
-                ->where(function ($query) {
-                    $query
-                        ->whereIn('status', ['ready_for_quotation', 'vendor_selected', 'waiting_director'])
-                        ->orWhereIn('procurement_approval_status', ['pending_equipment', 'pending_director']);
+                ->where(function ($query) use ($activeTab) {
+                    $this->applyVendorPriceTabFilter($query, $activeTab);
                 })
-                ->whereDoesntHave('purchaseOrderItem')
                 ->count(),
             'purchase-orders', 'receipts' => PurchaseOrder::query()
                 ->whereHas('purchaseRequest', fn ($query) => $query->whereIn('camp_id', $campIds))
@@ -1747,6 +1759,38 @@ class InventoryWorkflowController extends Controller
                 ->whereNotIn('status', ['goods_received', 'received', 'closed', 'cancelled'])
                 ->count(),
         };
+    }
+
+    private function applyVendorPriceTabFilter($query, string $tab): void
+    {
+        $activeStatuses = ['ready_for_quotation', 'vendor_selected', 'waiting_director'];
+        $historyStatuses = ['po_created', 'po_issued', 'partial_received', 'goods_received', 'rejected'];
+
+        if ($tab === 'history') {
+            $query->where(function ($historyQuery) use ($historyStatuses) {
+                $historyQuery
+                    ->whereIn('status', $historyStatuses)
+                    ->orWhereIn('procurement_approval_status', ['approved', 'rejected'])
+                    ->orWhereHas('purchaseOrderItems');
+            });
+
+            return;
+        }
+
+        if ($tab === 'approval') {
+            $query
+                ->whereNotIn('status', $historyStatuses)
+                ->whereNotIn('procurement_approval_status', ['approved', 'rejected'])
+                ->whereIn('procurement_approval_status', ['pending_equipment', 'pending_director'])
+                ->whereDoesntHave('purchaseOrderItems');
+
+            return;
+        }
+
+        $query
+            ->whereIn('status', $activeStatuses)
+            ->whereIn('procurement_approval_status', ['draft', 'not_required'])
+            ->whereDoesntHave('purchaseOrderItems');
     }
 
     private function purchaseRequestApprovalSignatures(PurchaseRequest $purchaseRequest): array

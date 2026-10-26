@@ -7,11 +7,11 @@
                     ][$status] ?? $workflowStatusLabel($status);
                     $dispatchesByTab = $dispatches;
                     $dispatchTabTitle = [
-                        'draft' => 'Draft Packing List',
+                        'draft' => 'Packing List',
                         'transit' => 'Barang Dalam Perjalanan',
                         'receiving' => 'Penerimaan Site',
                         'history' => 'Riwayat Pengiriman',
-                    ][$dispatchTab] ?? 'Logistik Site';
+                    ][$dispatchTab] ?? 'Pengiriman Barang';
                     $dispatchReviewQuery = array_filter([
                         'from' => $dispatchTab,
                         'company_id' => request()->integer('company_id') ?: null,
@@ -19,7 +19,7 @@
                 @endphp
                 @if ($dispatchTab === 'draft' && $currentUser->hasPermission('dispatches.manage') && !($createDispatch ?? false))
                     <div class="actions">
-                        <a class="button" href="{{ route('dispatches.create', array_filter(['company_id' => request()->integer('company_id') ?: null])) }}">+ Buat Draft Packing List</a>
+                        <a class="button" href="{{ route('dispatches.create', array_filter(['company_id' => request()->integer('company_id') ?: null])) }}">+ Buat Packing List</a>
                     </div>
                 @endif
                 @if ($dispatchTab === 'draft' && $currentUser->hasPermission('dispatches.manage') && ($createDispatch ?? false))
@@ -33,8 +33,8 @@
                         ])->values()->all() ?? []);
                     @endphp
                     <section id="dispatch-add-form" class="dispatch-create-panel">
-                    <div class="row"><div><h2>{{ $editingDispatch ? 'Edit Draft Packing List' : 'Buat Draft Packing List' }}</h2><p class="muted">Stok gudang baru berkurang setelah draft diperiksa dan dikirim ke site.</p></div><a class="button ghost" href="{{ $editingDispatch ? route('dispatches.review', ['siteDispatch' => $editingDispatch, 'from' => 'draft']) : route('dispatches', array_filter(['tab' => 'draft', 'company_id' => request()->integer('company_id') ?: null])) }}">Kembali</a></div>
-                    <form method="post" action="{{ $editingDispatch ? route('dispatches.update', $editingDispatch) : route('dispatches.store') }}" data-dispatch-form data-confirm="Simpan draft packing list ini? Stok gudang belum akan berkurang.">
+                    <div class="row"><div><h2>{{ $editingDispatch ? 'Edit Packing List' : 'Buat Packing List' }}</h2><p class="muted">Packing List disimpan sebagai draft. Stok gudang baru berkurang setelah dokumen diperiksa dan dikirim ke site.</p></div><a class="button ghost" href="{{ $editingDispatch ? route('dispatches.review', ['siteDispatch' => $editingDispatch, 'from' => 'draft']) : route('dispatches', array_filter(['tab' => 'draft', 'company_id' => request()->integer('company_id') ?: null])) }}">Kembali</a></div>
+                    <form method="post" action="{{ $editingDispatch ? route('dispatches.update', $editingDispatch) : route('dispatches.store') }}" data-dispatch-form data-confirm="Simpan Packing List sebagai draft? Stok gudang belum akan berkurang.">
                         @csrf
                         @if($editingDispatch) @method('PUT') @endif
                         <div class="three">
@@ -45,7 +45,7 @@
                         <div class="stack" data-dispatch-rows></div>
                         <div class="actions">
                             <button type="button" class="ghost" data-add-dispatch-row>+ Tambah Barang</button>
-                            <button>{{ $editingDispatch ? 'Simpan Perubahan Draft' : 'Simpan Draft' }}</button>
+                            <button>{{ $editingDispatch ? 'Simpan Perubahan' : 'Simpan Packing List' }}</button>
                         </div>
                     </form>
                     </section>

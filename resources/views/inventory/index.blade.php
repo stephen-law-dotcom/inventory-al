@@ -1321,7 +1321,7 @@
         'dashboard' => 'Dashboard', 'master' => 'Master Data', 'requests' => 'Order Request',
         'approvals' => 'Approval Saya', 'vendor-prices' => 'Harga Vendor',
         'purchase-orders' => 'Purchase Order', 'receipts' => 'Penerimaan Gudang',
-        'credit-notes' => 'Credit Note', 'dispatches' => 'Logistik Site',
+        'credit-notes' => 'Credit Note', 'dispatches' => 'Pengiriman Barang',
         'usage' => 'Pemakaian Unit', 'stock' => 'Stok Barang',
         'stock-opname' => 'Stock Opname', 'reports' => 'Report',
         'maintenance' => 'Pemeliharaan Sistem',
@@ -1355,7 +1355,7 @@
         $dispatchDefaultTab = $currentUser->hasPermission('dispatches.manage')
             ? 'draft'
             : ($currentUser->hasPermission('site_receipts.manage') ? 'receiving' : 'transit');
-        $nav[] = ['dispatches', 'truck', route('dispatches', array_merge($companyQuery, ['tab' => $dispatchDefaultTab])), 'Logistik Site'];
+        $nav[] = ['dispatches', 'truck', route('dispatches', array_merge($companyQuery, ['tab' => $dispatchDefaultTab])), 'Pengiriman Barang'];
     }
     if ($currentUser->hasPermission('usage.view')) {
         $nav[] = ['usage', 'tool', route('usage', $companyQuery), 'Pemakaian'];
@@ -1443,7 +1443,7 @@
             ['history', route('usage', array_merge($companyQuery, ['tab' => 'history'])), 'History Pemakaian'],
         ],
         'dispatches' => array_values(array_filter([
-            $currentUser->hasPermission('dispatches.manage') ? ['draft', route('dispatches', array_merge($companyQuery, ['tab' => 'draft'])), 'Draft Packing List'] : null,
+            $currentUser->hasPermission('dispatches.manage') ? ['draft', route('dispatches', array_merge($companyQuery, ['tab' => 'draft'])), 'Packing List'] : null,
             ($currentUser->hasPermission('dispatches.manage') || ! $currentUser->hasPermission('site_receipts.manage')) ? ['transit', route('dispatches', array_merge($companyQuery, ['tab' => 'transit'])), 'Dalam Perjalanan'] : null,
             $currentUser->hasPermission('site_receipts.manage') ? ['receiving', route('dispatches', array_merge($companyQuery, ['tab' => 'receiving'])), 'Penerimaan Site'] : null,
             ['history', route('dispatches', array_merge($companyQuery, ['tab' => 'history'])), 'Riwayat'],

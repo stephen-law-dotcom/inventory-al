@@ -4172,7 +4172,7 @@ class InventoryWorkflowController extends Controller
         $this->ensureCanAccessCamp($purchaseOrder->purchaseRequest->camp);
 
         if ($purchaseOrder->delivery_destination === 'direct_site') {
-            return back()->with('error', 'PO ini dikirim langsung ke site dan harus diterima melalui menu Logistik Site.');
+            return back()->with('error', 'PO ini dikirim langsung ke site dan harus diterima melalui menu Pengiriman Barang.');
         }
 
         if (! in_array($purchaseOrder->status, ['submitted', 'issued', 'partial_received'], true)) {

@@ -2383,6 +2383,50 @@ class ExampleTest extends TestCase
         $this->artisan('inventory:check-integrity --json')->assertExitCode(0);
     }
 
+    public function test_inventory_integrity_returns_orphan_po_item_without_quotation_to_vendor_pricing(): void
+    {
+        $purchaseRequest = PurchaseRequest::create([
+            'number' => 'ORPHAN-PO-REQUEST-001',
+            'camp_id' => Camp::firstOrFail()->id,
+            'requested_at' => now()->toDateString(),
+            'requested_by' => 'Integrity Test',
+            'status' => 'po_created',
+        ]);
+        $inventoryItem = InventoryItem::create([
+            'sku' => 'ORPHAN-PO-ITEM-001',
+            'name' => 'Barang Uji Status PO Tanpa Relasi',
+            'category' => 'Sparepart',
+            'uom' => 'pcs',
+            'stock_on_hand' => 0,
+            'stock_reserved' => 0,
+        ]);
+        $requestItem = $purchaseRequest->items()->create([
+            'inventory_item_id' => $inventoryItem->id,
+            'quantity' => 2,
+            'uom' => 'pcs',
+            'status' => 'po_created',
+            'procurement_approval_status' => 'not_required',
+        ]);
+
+        $preview = app(InventoryIntegrityService::class)->inspect();
+        $finding = collect($preview['findings'])->first(
+            fn ($finding) => $finding['code'] === 'orphan_po_created_item'
+                && $finding['document_id'] === $requestItem->id
+        );
+
+        $this->assertNotNull($finding);
+        $this->assertTrue($finding['auto_fixable']);
+        $this->assertSame('ready_for_quotation', $finding['expected']);
+        $this->assertSame('po_created', $requestItem->fresh()->status);
+
+        app(InventoryIntegrityService::class)->inspect(true);
+
+        $this->assertSame('ready_for_quotation', $requestItem->fresh()->status);
+        $this->assertDatabaseMissing('vendor_quotations', [
+            'purchase_request_item_id' => $requestItem->id,
+        ]);
+    }
+
     public function test_head_purchasing_can_permanently_reject_purchase_order(): void
     {
         $headPurchasing = User::where('email', 'head.purchasing@sisteminventory.test')->firstOrFail();

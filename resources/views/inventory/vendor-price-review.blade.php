@@ -259,6 +259,22 @@
     $selectedTotal = $selectedQuotations->sum(fn ($quotation) => $quotation->unit_price * $quotation->selected_quantity);
     $selectedVendorNames = $selectedQuotations->pluck('vendor.name')->filter()->unique()->values()->implode(', ');
     $procurementStatus = $requestItem->procurement_approval_status ?? 'not_required';
+    $procurementStatusLabel = match ($procurementStatus) {
+        'draft' => 'Draft',
+        'pending_equipment' => 'Menunggu Peralatan',
+        'pending_director' => 'Menunggu Direktur',
+        'approved' => 'Disetujui',
+        'rejected' => 'Ditolak',
+        default => 'Belum diajukan',
+    };
+    $orderRequestApprovalCompleted = collect([
+        $requestItem->logistic_approval_status,
+        $requestItem->chief_mechanic_approval_status,
+        $requestItem->manager_camp_approval_status,
+        $requestItem->equipment_approval_status,
+        $requestItem->ppic_approval_status,
+    ])->every(fn ($status) => $status === 'approved')
+        && in_array($requestItem->director_approval_status, ['approved', 'not_required'], true);
     $procurementRejectionLog = ($timelineLogs ?? collect())->where('event', 'procurement_request.rejected')->last();
     $procurementRejectorName = $procurementRejectionLog?->user?->name ?? 'User sistem';
     $procurementRejectedAt = $procurementRejectionLog?->created_at;
@@ -273,6 +289,7 @@
     $directorDisplayAt = $rejectedAtDirector ? $procurementRejectedAt : $requestItem->procurement_director_approved_at;
     $directorDisplayStatus = $rejectedAtDirector ? 'Ditolak' : ($procurementStatus === 'approved' ? 'Selesai' : 'Belum');
     $hasPurchaseOrder = $requestItem->purchaseOrderItems->isNotEmpty();
+    $hasOrphanPurchaseOrderStatus = $requestItem->status === 'po_created' && ! $hasPurchaseOrder;
     $vendorPricingCompleted = $hasPurchaseOrder || in_array($procurementStatus, ['approved', 'rejected'], true);
     $canEditQuotations = ! $vendorPricingCompleted
         && in_array($procurementStatus, ['draft', 'not_required'], true)
@@ -328,22 +345,25 @@
         <div class="stat"><span>Vendor pembanding</span><strong>{{ $rankedQuotations->count() }}</strong></div>
         <div class="stat"><span>Harga termurah cukup stok</span><strong>{{ $recommendedQuotation?->vendor?->name ?? '-' }}</strong></div>
         <div class="stat"><span>Qty pengadaan</span><strong>{{ $procurementStatus === 'approved' ? $requestItem->approvedQuantity().' '.($requestItem->uom ?? $requestItem->inventoryItem->uom) : ($selectedQuantity > 0 ? $selectedQuantity.' '.($requestItem->uom ?? $requestItem->inventoryItem->uom) : '-') }}</strong></div>
-        <div class="stat"><span>Approval PPG</span><strong>{{ str_replace('_', ' ', $procurementStatus) }}</strong></div>
+        <div class="stat"><span>Approval PPG</span><strong>{{ $procurementStatusLabel }}</strong></div>
     </section>
 
     <section class="panel" style="margin-top:16px">
         <div class="panel-head">
             <div>
-                <h2>Approval Permintaan Pengadaan Barang</h2>
+                <h2>Approval Permintaan Pengadaan Barang (PPG)</h2>
             </div>
-            <span class="pill {{ $procurementStatus === 'approved' ? 'ok' : ($procurementStatus === 'rejected' ? 'bad' : 'wait') }}">{{ str_replace('_', ' ', $procurementStatus) }}</span>
+            <span class="pill {{ $procurementStatus === 'approved' ? 'ok' : ($procurementStatus === 'rejected' ? 'bad' : 'wait') }}">{{ $procurementStatusLabel }}</span>
         </div>
+        @if ($orderRequestApprovalCompleted && in_array($procurementStatus, ['not_required', 'draft'], true) && ! $requestItem->procurement_created_at)
+            <div class="notice success">Approval Order Request sudah selesai. Approval PPG belum diajukan karena pilihan vendor belum ditetapkan.</div>
+        @endif
         <table>
             <thead><tr><th>Tahap</th><th>Nama</th><th>Qty</th><th>Waktu</th><th>Status</th></tr></thead>
             <tbody>
             <tr><td>Dibuat oleh Admin Logistic</td><td>{{ $requestItem->procurement_created_by_name ?: '-' }}</td><td>{{ $requestItem->quantity }} {{ $requestItem->uom ?? $requestItem->inventoryItem->uom }}</td><td>{{ $requestItem->procurement_created_at ? \Illuminate\Support\Carbon::parse($requestItem->procurement_created_at)->format('d M Y H:i') : '-' }}</td><td>{{ $requestItem->procurement_created_at ? 'Selesai' : 'Belum' }}</td></tr>
-            <tr><td>Diperiksa oleh Peralatan</td><td>{{ $equipmentDisplayName ?: '-' }}</td><td>{{ $requestItem->equipment_approved_quantity ? $requestItem->equipmentApprovedQuantity().' '.($requestItem->uom ?? $requestItem->inventoryItem->uom) : '-' }}</td><td>{{ $equipmentDisplayAt ? \Illuminate\Support\Carbon::parse($equipmentDisplayAt)->format('d M Y H:i') : '-' }}</td><td>{{ $equipmentDisplayStatus }}</td></tr>
-            <tr><td>Disetujui oleh Direktur</td><td>{{ $directorDisplayName ?: '-' }}</td><td>{{ $requestItem->approved_quantity ? $requestItem->approvedQuantity().' '.($requestItem->uom ?? $requestItem->inventoryItem->uom) : '-' }}</td><td>{{ $directorDisplayAt ? \Illuminate\Support\Carbon::parse($directorDisplayAt)->format('d M Y H:i') : '-' }}</td><td>{{ $directorDisplayStatus }}</td></tr>
+            <tr><td>Diperiksa oleh Peralatan</td><td>{{ $equipmentDisplayName ?: '-' }}</td><td>{{ $equipmentDisplayAt ? $requestItem->equipmentApprovedQuantity().' '.($requestItem->uom ?? $requestItem->inventoryItem->uom) : '-' }}</td><td>{{ $equipmentDisplayAt ? \Illuminate\Support\Carbon::parse($equipmentDisplayAt)->format('d M Y H:i') : '-' }}</td><td>{{ $equipmentDisplayStatus }}</td></tr>
+            <tr><td>Disetujui oleh Direktur</td><td>{{ $directorDisplayName ?: '-' }}</td><td>{{ $directorDisplayAt ? $requestItem->approvedQuantity().' '.($requestItem->uom ?? $requestItem->inventoryItem->uom) : '-' }}</td><td>{{ $directorDisplayAt ? \Illuminate\Support\Carbon::parse($directorDisplayAt)->format('d M Y H:i') : '-' }}</td><td>{{ $directorDisplayStatus }}</td></tr>
             </tbody>
         </table>
         @if ($requestItem->quantity_adjustment_reason)
@@ -357,29 +377,31 @@
                 <form method="post" action="{{ route('request-items.procurement-submit', $requestItem) }}" data-confirm="Ajukan pilihan vendor ke proses approval PPG sekarang?">@csrf<button>Ajukan Approval PPG</button></form>
             @endif
         </div>
-        <div class="signature-grid">
-            <div class="signature">
-                <div>
-                    <strong>Dibuat Oleh</strong>
-                    <p>Admin Logistik</p>
+        @if ($requestItem->procurement_created_at || in_array($procurementStatus, ['pending_equipment', 'pending_director', 'approved', 'rejected'], true))
+            <div class="signature-grid">
+                <div class="signature">
+                    <div>
+                        <strong>Dibuat Oleh</strong>
+                        <p>Admin Logistik</p>
+                    </div>
+                    <div class="signature-line">{{ $requestItem->procurement_created_by_name ?: 'Admin Logistik' }}</div>
                 </div>
-                <div class="signature-line">{{ $requestItem->procurement_created_by_name ?: 'Admin Logistik' }}</div>
-            </div>
-            <div class="signature">
-                <div>
-                    <strong>Diperiksa Oleh</strong>
-                    <p>Peralatan</p>
+                <div class="signature">
+                    <div>
+                        <strong>Diperiksa Oleh</strong>
+                        <p>Peralatan</p>
+                    </div>
+                    <div class="signature-line">{{ $equipmentDisplayName ?: 'Peralatan' }}{{ $rejectedAtEquipment ? ' (Menolak)' : '' }}</div>
                 </div>
-                <div class="signature-line">{{ $equipmentDisplayName ?: 'Peralatan' }}{{ $rejectedAtEquipment ? ' (Menolak)' : '' }}</div>
-            </div>
-            <div class="signature">
-                <div>
-                    <strong>Disetujui Oleh</strong>
-                    <p>Direktur</p>
+                <div class="signature">
+                    <div>
+                        <strong>Disetujui Oleh</strong>
+                        <p>Direktur</p>
+                    </div>
+                    <div class="signature-line">{{ $directorDisplayName ?: 'Direktur' }}{{ $rejectedAtDirector ? ' (Menolak)' : '' }}</div>
                 </div>
-                <div class="signature-line">{{ $directorDisplayName ?: 'Direktur' }}{{ $rejectedAtDirector ? ' (Menolak)' : '' }}</div>
             </div>
-        </div>
+        @endif
     </section>
 
     <section class="grid">
@@ -435,7 +457,7 @@
                     </div>
                 </form>
             @else
-                <div class="empty">{{ $hasPurchaseOrder ? 'Penawaran sudah masuk Purchase Order dan hanya dapat dilihat.' : ($procurementStatus === 'rejected' ? 'Pengajuan ditolak dan proses dihentikan.' : ($procurementStatus === 'approved' ? 'Proses harga vendor sudah selesai dan hanya dapat dilihat.' : ($canManageVendorPrices ? 'Penawaran dikunci karena sudah masuk proses approval pengadaan.' : 'Role Anda hanya bisa melihat harga vendor.'))) }}</div>
+                <div class="empty">{{ $hasPurchaseOrder ? 'Penawaran sudah masuk Purchase Order dan hanya dapat dilihat.' : ($hasOrphanPurchaseOrderStatus ? 'Data tidak konsisten: item tercatat sudah dibuatkan PO, tetapi item PO tidak ditemukan. Periksa integritas data sebelum melanjutkan.' : ($procurementStatus === 'rejected' ? 'Pengajuan ditolak dan proses dihentikan.' : ($procurementStatus === 'approved' ? 'Proses harga vendor sudah selesai dan hanya dapat dilihat.' : ($canManageVendorPrices ? 'Penawaran dikunci karena sudah masuk proses approval pengadaan.' : 'Role Anda hanya bisa melihat harga vendor.')))) }}</div>
             @endif
         </article>
     </section>

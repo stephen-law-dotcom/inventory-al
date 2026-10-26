@@ -68,29 +68,34 @@ class InventoryIntegrityService
     private function inspectOrphanRequestItems(Collection $findings, bool $fix): void
     {
         PurchaseRequestItem::query()
-            ->with(['purchaseRequest', 'inventoryItem', 'selectedQuotations'])
+            ->with(['purchaseRequest', 'inventoryItem', 'quotations', 'selectedQuotations'])
             ->where('status', 'po_created')
             ->whereDoesntHave('purchaseOrderItems')
             ->each(function (PurchaseRequestItem $item) use ($findings, $fix) {
+                $hasNoQuotations = $item->quotations->isEmpty();
                 $selectionComplete = (int) $item->selectedQuotations->sum('selected_quantity') === $item->approvedQuantity();
-                $autoFixable = $item->procurement_approval_status === 'approved' && $selectionComplete;
+                $hasCompleteVendorSelection = $item->procurement_approval_status === 'approved' && $selectionComplete;
+                $expectedStatus = $hasNoQuotations ? 'ready_for_quotation' : 'vendor_selected';
+                $autoFixable = $hasNoQuotations || $hasCompleteVendorSelection;
                 $fixed = false;
 
                 if ($fix && $autoFixable) {
-                    $item->update(['status' => 'vendor_selected']);
+                    $item->update(['status' => $expectedStatus]);
                     $this->purchaseRequestWorkflow->syncApprovalStatus($item->purchaseRequest);
                     $fixed = true;
                 }
 
                 $this->addFinding($findings, 'orphan_po_created_item', 'high', 'Item Order Request', $item, [
                     'current' => 'po_created',
-                    'expected' => $autoFixable ? 'vendor_selected' : null,
+                    'expected' => $autoFixable ? $expectedStatus : null,
                     'auto_fixable' => $autoFixable,
                     'fixed' => $fixed,
                     'document_number' => $item->purchaseRequest?->number.' / '.$item->inventoryItem?->sku,
-                    'message' => $autoFixable
-                        ? 'Item berstatus po_created tanpa item PO; pilihan vendor lengkap sehingga aman dikembalikan ke antrean PO.'
-                        : 'Item berstatus po_created tanpa item PO dan perlu pemeriksaan pilihan vendor/approval.',
+                    'message' => $hasNoQuotations
+                        ? 'Item berstatus po_created tanpa item PO dan tanpa penawaran; aman dikembalikan ke antrean Harga Vendor.'
+                        : ($hasCompleteVendorSelection
+                            ? 'Item berstatus po_created tanpa item PO; pilihan vendor lengkap sehingga aman dikembalikan ke antrean PO.'
+                            : 'Item berstatus po_created tanpa item PO dan perlu pemeriksaan pilihan vendor/approval.'),
                 ]);
             });
     }

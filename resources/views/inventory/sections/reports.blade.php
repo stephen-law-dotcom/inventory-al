@@ -543,22 +543,37 @@
                 <section>
                     <h2>Report Vendor Terpilih</h2>
                     <table>
-                        <thead><tr><th>Order Request</th><th>Barang</th><th>Vendor</th><th>Qty</th><th>Nilai</th></tr></thead>
+                        <thead><tr><th>Order Request</th><th>Jenis / Referensi</th><th>Barang</th><th>Vendor</th><th>Qty</th><th>Nilai</th></tr></thead>
                         <tbody>
                         @forelse ($selectedVendorAllocations as $allocation)
                             @php
                                 $requestItem = $allocation['request_item'];
                                 $selectedQuotation = $allocation['quotation'];
+                                $sourceCreditNote = $requestItem->sourceCreditNoteItem?->creditNote;
                             @endphp
                             <tr>
                                 <td>{{ $requestItem->purchaseRequest->number }}</td>
+                                <td>
+                                    @if ($sourceCreditNote)
+                                        <span class="pill">Pengajuan Ulang</span>
+                                        <div class="muted">
+                                            @if ($currentUser->hasPermission('credit_notes.view'))
+                                                <a href="{{ route('credit-notes.review', ['creditNote' => $sourceCreditNote, 'from' => 'reports']) }}">CN {{ $sourceCreditNote->number }}</a>
+                                            @else
+                                                CN {{ $sourceCreditNote->number }}
+                                            @endif
+                                        </div>
+                                    @else
+                                        <span class="pill">Pengadaan Awal</span>
+                                    @endif
+                                </td>
                                 <td>{{ $requestItem->inventoryItem->name }}</td>
                                 <td>{{ $selectedQuotation->vendor->name }}<div class="muted">{{ $selectedQuotation->brand_name ?: '-' }}</div></td>
                                 <td>{{ $selectedQuotation->selected_quantity }} {{ $requestItem->uom ?? $requestItem->inventoryItem->uom }}</td>
                                 <td class="price">{{ $canSeePrices ? 'Rp'.number_format($selectedQuotation->unit_price * $selectedQuotation->selected_quantity, 0, ',', '.') : 'Disembunyikan' }}</td>
                             </tr>
                         @empty
-                            <tr><td colspan="5">Belum ada vendor terpilih sesuai filter.</td></tr>
+                            <tr><td colspan="6">Belum ada vendor terpilih sesuai filter.</td></tr>
                         @endforelse
                         </tbody>
                     </table>
@@ -569,20 +584,43 @@
                 <section>
                     <h2>Report Purchase Order</h2>
                     <table>
-                        <thead><tr><th>No PO</th><th>Tanggal</th><th>Vendor</th><th>Order Request</th><th>Site</th><th>Status</th><th>Nilai</th></tr></thead>
+                        <thead><tr><th>No PO</th><th>Tanggal</th><th>Vendor</th><th>Order Request</th><th>Jenis / Referensi</th><th>Site</th><th>Status</th><th>Nilai</th></tr></thead>
                         <tbody>
                         @forelse ($filteredPurchaseOrders as $purchaseOrder)
+                            @php
+                                $sourceCreditNotes = $purchaseOrder->items
+                                    ->map(fn ($item) => $item->requestItem?->sourceCreditNoteItem?->creditNote)
+                                    ->filter()
+                                    ->unique('id')
+                                    ->values();
+                            @endphp
                             <tr>
                                 <td>{{ $purchaseOrder->number }}</td>
                                 <td>{{ $purchaseOrder->ordered_at->format('d M Y') }}</td>
                                 <td>{{ $purchaseOrder->vendor->name }}</td>
                                 <td>{{ $purchaseOrder->purchaseRequest->number }}</td>
+                                <td>
+                                    @if ($sourceCreditNotes->isNotEmpty())
+                                        <span class="pill">Pengajuan Ulang</span>
+                                        @foreach ($sourceCreditNotes as $sourceCreditNote)
+                                            <div class="muted">
+                                                @if ($currentUser->hasPermission('credit_notes.view'))
+                                                    <a href="{{ route('credit-notes.review', ['creditNote' => $sourceCreditNote, 'from' => 'reports']) }}">CN {{ $sourceCreditNote->number }}</a>
+                                                @else
+                                                    CN {{ $sourceCreditNote->number }}
+                                                @endif
+                                            </div>
+                                        @endforeach
+                                    @else
+                                        <span class="pill">Pengadaan Awal</span>
+                                    @endif
+                                </td>
                                 <td>{{ $purchaseOrder->purchaseRequest->camp->name }}</td>
                                 <td><span class="pill">{{ $purchaseOrderStatusLabel($purchaseOrder->status) }}</span></td>
                                 <td class="price">{{ $canSeePrices ? 'Rp'.number_format($purchaseOrder->grand_total, 0, ',', '.') : 'Disembunyikan' }}</td>
                             </tr>
                         @empty
-                            <tr><td colspan="7">Belum ada purchase order sesuai filter.</td></tr>
+                            <tr><td colspan="8">Belum ada purchase order sesuai filter.</td></tr>
                         @endforelse
                         </tbody>
                     </table>

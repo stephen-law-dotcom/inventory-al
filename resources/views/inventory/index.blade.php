@@ -442,6 +442,40 @@
         }
         .hero-panel div:last-child { border-bottom: 0; }
         .hero-panel strong { color: #fff; font-size: 18px; }
+        .dashboard-period-bar {
+            display: flex;
+            justify-content: space-between;
+            gap: 14px;
+            align-items: center;
+            padding: 14px 16px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: #fff;
+            box-shadow: var(--shadow-soft);
+        }
+        .dashboard-period-copy { display: grid; gap: 3px; }
+        .dashboard-period-copy strong { color: var(--ink); font-size: 14px; }
+        .dashboard-period-copy span { color: var(--muted); font-size: 12px; }
+        .dashboard-period-options {
+            display: inline-grid;
+            grid-template-columns: repeat(3, minmax(84px, 1fr));
+            padding: 3px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: #f3f7f8;
+        }
+        .dashboard-period-options a {
+            min-height: 34px;
+            display: grid;
+            place-items: center;
+            padding: 6px 12px;
+            border-radius: 6px;
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 900;
+            text-decoration: none;
+        }
+        .dashboard-period-options a.active { background: var(--accent); color: #fff; box-shadow: var(--shadow-soft); }
         .kpi-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; }
         .kpi-card {
             min-height: 126px;
@@ -1028,6 +1062,8 @@
             .hero-copy { padding: 18px; }
             .hero-copy h2 { font-size: 22px; }
             .hero-panel { padding: 16px 18px; }
+            .dashboard-period-bar { align-items: stretch; flex-direction: column; }
+            .dashboard-period-options { width: 100%; }
             .priority-card { grid-template-columns: 36px minmax(0, 1fr); }
             .priority-card .button { grid-column: 1 / -1; width: 100%; }
             .inventory-reminder .chart-title { align-items: stretch; flex-direction: column; }

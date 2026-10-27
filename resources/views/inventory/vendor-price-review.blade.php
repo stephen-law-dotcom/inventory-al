@@ -289,6 +289,8 @@
     $directorDisplayAt = $rejectedAtDirector ? $procurementRejectedAt : $requestItem->procurement_director_approved_at;
     $directorDisplayStatus = $rejectedAtDirector ? 'Ditolak' : ($procurementStatus === 'approved' ? 'Selesai' : 'Belum');
     $hasPurchaseOrder = $requestItem->purchaseOrderItems->isNotEmpty();
+    $sourceCreditNote = $requestItem->sourceCreditNoteItem?->creditNote;
+    $sourcePurchaseOrder = $requestItem->sourceCreditNoteItem?->purchaseOrderItem?->purchaseOrder;
     $hasOrphanPurchaseOrderStatus = $requestItem->status === 'po_created' && ! $hasPurchaseOrder;
     $vendorPricingCompleted = $hasPurchaseOrder || in_array($procurementStatus, ['approved', 'rejected'], true);
     $canEditQuotations = ! $vendorPricingCompleted
@@ -326,6 +328,20 @@
             <h1>{{ $requestItem->inventoryItem->sku }} - {{ $requestItem->inventoryItem->name }}</h1>
             <p>PR {{ $purchaseRequest->number }} - {{ $purchaseRequest->camp->company_name }} / {{ $purchaseRequest->camp->name }}</p>
             <p>Unit {{ $requestItem->unit?->code }} - Diminta camp {{ $requestItem->quantity }} {{ $requestItem->uom ?? $requestItem->inventoryItem->uom }}{{ $requestItem->specification ? ' - '.$requestItem->specification : '' }}</p>
+            @if ($sourceCreditNote)
+                <p>
+                    <span class="pill">Pengajuan Ulang</span>
+                    dari
+                    @if (auth()->user()?->hasPermission('credit_notes.view'))
+                        <a href="{{ route('credit-notes.review', $sourceCreditNote) }}">CN {{ $sourceCreditNote->number }}</a>
+                    @else
+                        CN {{ $sourceCreditNote->number }}
+                    @endif
+                    @if ($sourcePurchaseOrder)
+                        / PO asal {{ $sourcePurchaseOrder->number }}
+                    @endif
+                </p>
+            @endif
         </div>
         <div class="actions">
             <a class="button ghost" href="{{ route('vendor-prices.print', $requestItem) }}" target="_blank">Cetak</a>

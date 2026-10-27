@@ -11,6 +11,22 @@
                     $canViewStock = $currentUser->hasPermission('stock.view') || $currentUser->hasPermission('stock_opname.view');
                     $isCampScoped = in_array($currentUser->role?->slug, ['camp', 'manager_camp'], true)
                         && count($currentUser->scopedCampIds()) > 0;
+                    $dashboardPeriodLabels = [
+                        'today' => 'Hari Ini',
+                        '7_days' => '7 Hari',
+                        'month' => 'Bulan Ini',
+                    ];
+                    $dashboardPeriodLabel = $dashboardPeriodLabels[$dashboardPeriod] ?? $dashboardPeriodLabels['month'];
+                    $dashboardPeriodEnd = now()->endOfDay();
+                    $dashboardPeriodRange = $dashboardPeriodStart->isSameDay($dashboardPeriodEnd)
+                        ? $dashboardPeriodEnd->format('d M Y')
+                        : $dashboardPeriodStart->format('d M Y').' - '.$dashboardPeriodEnd->format('d M Y');
+                    $inDashboardPeriod = fn ($date) => $date
+                        && \Illuminate\Support\Carbon::parse($date)->between($dashboardPeriodStart, $dashboardPeriodEnd, true);
+                    $periodPurchaseRequests = $purchaseRequests->filter(fn ($request) => $inDashboardPeriod($request->requested_at));
+                    $periodPurchaseOrders = $purchaseOrders->filter(fn ($purchaseOrder) => $inDashboardPeriod($purchaseOrder->ordered_at));
+                    $periodCreditNotes = $creditNotes->filter(fn ($creditNote) => $inDashboardPeriod($creditNote->credit_note_date));
+                    $periodUsageLogs = $usageLogs->filter(fn ($usageLog) => $inDashboardPeriod($usageLog->used_at));
                     $requestStatusChart = $purchaseRequests->groupBy('status')->map->count();
                     $maxRequestStatus = max(1, $requestStatusChart->max() ?? 1);
                     $campQuantityByItem = $campStocks->groupBy('inventory_item_id')->map->sum('quantity');
@@ -73,14 +89,29 @@
                     $stockReminderRoute = $currentUser->hasPermission('reports.view')
                         ? route('reports.show', 'stock')
                         : ($currentUser->hasPermission('stock.view') ? route('stock') : route('stock-opname'));
-                    $usageTrend = collect(range(6, 0))->map(function ($daysAgo) use ($usageLogs) {
-                        $date = now()->subDays($daysAgo);
+                    $usageTrend = match ($dashboardPeriod) {
+                        'today' => collect([[
+                            'label' => 'Hari ini',
+                            'total' => $periodUsageLogs->sum('quantity'),
+                        ]]),
+                        '7_days' => collect(range(6, 0))->map(function ($daysAgo) use ($periodUsageLogs) {
+                            $date = now()->subDays($daysAgo);
 
-                        return [
-                            'label' => $date->format('d M'),
-                            'total' => $usageLogs->filter(fn ($log) => $log->used_at->isSameDay($date))->sum('quantity'),
-                        ];
-                    });
+                            return [
+                                'label' => $date->format('d M'),
+                                'total' => $periodUsageLogs->filter(fn ($log) => $log->used_at->isSameDay($date))->sum('quantity'),
+                            ];
+                        }),
+                        default => collect(range(1, (int) ceil(now()->day / 7)))->map(function ($week) use ($periodUsageLogs) {
+                            $start = now()->startOfMonth()->addDays(($week - 1) * 7);
+                            $end = $start->copy()->addDays(6)->min(now());
+
+                            return [
+                                'label' => $start->day.'-'.$end->day,
+                                'total' => $periodUsageLogs->filter(fn ($log) => $log->used_at->between($start, $end, true))->sum('quantity'),
+                            ];
+                        }),
+                    };
                     $maxUsageTrend = max(1, $usageTrend->max('total') ?? 1);
                     $approvalPendingItems = $purchaseRequests->flatMap->items->filter(fn ($item) => in_array($item->status, ['submitted', 'logistic_checked', 'waiting_manager_camp'], true));
                     $myApprovalItems = $approvalPendingItems->filter(fn ($item) =>
@@ -106,9 +137,9 @@
                     $receivingPo = $purchaseOrders->whereIn('status', ['submitted', 'issued', 'partial_received']);
                     $openCreditNotes = $creditNotes->whereNotIn('status', ['closed']);
                     $openPoValue = $activePo->sum('grand_total');
-                    $monthPoValue = $purchaseOrders->filter(fn ($po) => $po->ordered_at && \Illuminate\Support\Carbon::parse($po->ordered_at)->isSameMonth(now()))->sum('grand_total');
-                    $monthUsageQty = $usageLogs->filter(fn ($log) => $log->used_at->isSameMonth(now()))->sum('quantity');
-                    $topUsageItems = $usageLogs
+                    $periodPoValue = $periodPurchaseOrders->sum('grand_total');
+                    $periodUsageQty = $periodUsageLogs->sum('quantity');
+                    $topUsageItems = $periodUsageLogs
                         ->groupBy('inventory_item_id')
                         ->map(fn ($logs) => [
                             'item' => $logs->first()->inventoryItem,
@@ -163,15 +194,40 @@
                         </div>
                     </section>
 
+                    <div class="dashboard-period-bar">
+                        <div class="dashboard-period-copy">
+                            <strong>Ringkasan Aktivitas</strong>
+                            <span>{{ $dashboardPeriodRange }}</span>
+                        </div>
+                        <nav class="dashboard-period-options" aria-label="Periode dashboard">
+                            @foreach ($dashboardPeriodLabels as $periodValue => $periodLabel)
+                                <a class="{{ $dashboardPeriod === $periodValue ? 'active' : '' }}"
+                                   href="{{ route('dashboard', array_merge($companyQuery, ['period' => $periodValue])) }}"
+                                   @if ($dashboardPeriod === $periodValue) aria-current="page" @endif>{{ $periodLabel }}</a>
+                            @endforeach
+                        </nav>
+                    </div>
+
                     <div class="kpi-grid">
-                        @if ($canViewRequests)<div class="kpi-card"><div class="kpi-label"><span>Total OR</span><span class="kpi-icon">OR</span></div><strong>{{ $purchaseRequests->count() }}</strong><small>{{ $purchaseRequests->where('status', 'draft')->count() }} draft, {{ $purchaseRequests->whereNotIn('status', ['draft', 'rejected'])->count() }} berjalan</small></div>@endif
+                        @if ($canViewRequests)
+                            <div class="kpi-card">
+                                <div class="kpi-label"><span>OR dibuat</span><span class="kpi-icon">OR</span></div>
+                                <strong>{{ $periodPurchaseRequests->count() }}</strong>
+                                <small>
+                                    {{ $dashboardPeriodLabel }}
+                                    @if ($canViewCreditNotes)
+                                        - {{ $periodCreditNotes->count() }} credit note dibuat
+                                    @endif
+                                </small>
+                            </div>
+                        @endif
                         <div class="kpi-card"><div class="kpi-label"><span>Worklist prioritas</span><span class="kpi-icon">WK</span></div><strong>{{ $priorityTasks->sum('count') }}</strong><small>Approval, vendor, PO, penerimaan, dan opname</small></div>
                         @if ($canViewPurchaseOrders)<div class="kpi-card"><div class="kpi-label"><span>PO berjalan</span><span class="kpi-icon">PO</span></div><strong>{{ $activePo->count() }}</strong><small>{{ $purchaseOrders->where('status', 'on_progress')->count() }} on progress, {{ $receivingPo->count() }} submitted/terima</small></div>@endif
                         @if ($canViewStock)<div class="kpi-card"><div class="kpi-label"><span>{{ $isCampScoped ? 'Perlu dipenuhi' : 'Perlu order' }}</span><span class="kpi-icon">ST</span></div><strong>{{ $criticalCount }}</strong><small>{{ $safeCount }} aman dari {{ $inventoryRows->count() }} barang{{ $isCampScoped ? ' di site' : ' terpantau' }}</small></div>@endif
                         @if ($canSeePrices && $canViewPurchaseOrders)
-                            <div class="kpi-card"><div class="kpi-label"><span>Nilai PO aktif</span><span class="kpi-icon">Rp</span></div><strong>Rp{{ number_format($openPoValue, 0, ',', '.') }}</strong><small>Bulan ini Rp{{ number_format($monthPoValue, 0, ',', '.') }}</small></div>
+                            <div class="kpi-card"><div class="kpi-label"><span>Nilai PO aktif</span><span class="kpi-icon">Rp</span></div><strong>Rp{{ number_format($openPoValue, 0, ',', '.') }}</strong><small>{{ $dashboardPeriodLabel }} Rp{{ number_format($periodPoValue, 0, ',', '.') }}</small></div>
                         @elseif ($canViewUsage)
-                            <div class="kpi-card"><div class="kpi-label"><span>Pemakaian bulan ini</span><span class="kpi-icon">US</span></div><strong>{{ number_format($monthUsageQty, 0, ',', '.') }}</strong><small>Qty pemakaian tercatat bulan ini</small></div>
+                            <div class="kpi-card"><div class="kpi-label"><span>Pemakaian</span><span class="kpi-icon">US</span></div><strong>{{ number_format($periodUsageQty, 0, ',', '.') }}</strong><small>Qty tercatat - {{ $dashboardPeriodLabel }}</small></div>
                         @endif
                     </div>
 
@@ -269,10 +325,10 @@
                         @if ($canViewUsage)
                         <section class="chart-card">
                             <div class="chart-title">
-                                <strong>Trend Pemakaian 7 Hari</strong>
+                                <strong>Trend Pemakaian - {{ $dashboardPeriodLabel }}</strong>
                                 <span class="pill">{{ number_format($usageTrend->sum('total'), 0, ',', '.') }} qty</span>
                             </div>
-                            <div class="trend-bars">
+                            <div class="trend-bars" style="grid-template-columns: repeat({{ max(1, $usageTrend->count()) }}, minmax(0, 1fr))">
                                 @foreach ($usageTrend as $point)
                                     <div class="trend-bar">
                                         <span style="height: {{ max(8, ($point['total'] / $maxUsageTrend) * 128) }}px"></span>
@@ -409,7 +465,10 @@
 
                     @if ($canViewUsage)
                         <section>
-                            <h2>Pemakaian Tertinggi</h2>
+                            <div class="chart-title">
+                                <h2 style="margin:0">Pemakaian Tertinggi</h2>
+                                <span class="pill">{{ $dashboardPeriodLabel }}</span>
+                            </div>
                             <table class="mini-table">
                                 <thead><tr><th>Barang</th><th>Total</th><th>Satuan</th></tr></thead>
                                 <tbody>

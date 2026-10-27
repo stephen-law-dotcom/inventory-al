@@ -164,7 +164,12 @@ class ReportService
 
     private function vendors(User $user, array $filters): array
     {
-        $query = VendorQuotation::with(['vendor', 'requestItem.inventoryItem', 'requestItem.purchaseRequest.camp.company'])
+        $query = VendorQuotation::with([
+            'vendor',
+            'requestItem.inventoryItem',
+            'requestItem.purchaseRequest.camp.company',
+            'requestItem.sourceCreditNoteItem.creditNote',
+        ])
             ->where('is_selected', true)->where('selected_quantity', '>', 0);
         $this->scopeNestedCamp($query, $user, $filters, 'requestItem.purchaseRequest.camp');
         $query->when($filters['vendor_id'], fn ($q, $id) => $q->where('vendor_id', $id))
@@ -174,8 +179,12 @@ class ReportService
         $models = $query->latest()->get();
         $rows = $models->map(function ($quote) use ($user) {
             $uom = $quote->requestItem->uom ?? $quote->requestItem->inventoryItem?->uom;
+            $sourceCreditNote = $quote->requestItem->sourceCreditNoteItem?->creditNote;
             return [
                 'or' => $quote->requestItem->purchaseRequest->number,
+                'type_reference' => $sourceCreditNote
+                    ? 'Pengajuan Ulang / CN '.$sourceCreditNote->number
+                    : 'Pengadaan Awal',
                 'site' => $this->campName($quote->requestItem->purchaseRequest->camp),
                 'item' => $this->itemName($quote->requestItem->inventoryItem),
                 'vendor' => $quote->vendor?->name ?: '-', 'brand' => $quote->brand_name ?: '-',
@@ -187,7 +196,8 @@ class ReportService
         $value = $models->sum(fn ($q) => $q->unit_price * $q->selected_quantity);
 
         return $this->payload('Report Vendor Terpilih', 'Vendor final yang dipilih untuk setiap barang pengajuan.', [
-            ['key' => 'or', 'label' => 'Order Request'], ['key' => 'site', 'label' => 'Site'], ['key' => 'item', 'label' => 'Barang'],
+            ['key' => 'or', 'label' => 'Order Request'], ['key' => 'type_reference', 'label' => 'Jenis / Referensi'],
+            ['key' => 'site', 'label' => 'Site'], ['key' => 'item', 'label' => 'Barang'],
             ['key' => 'vendor', 'label' => 'Vendor'], ['key' => 'brand', 'label' => 'Merek'],
             ['key' => 'quantity', 'label' => 'Qty', 'align' => 'right'], ['key' => 'unit_price', 'label' => 'Harga', 'align' => 'right'],
             ['key' => 'total', 'label' => 'Nilai', 'align' => 'right'],
@@ -201,18 +211,30 @@ class ReportService
     private function purchaseOrders(User $user, array $filters): array
     {
         $models = $this->purchaseOrderQuery($user, $filters)->latest('ordered_at')->latest('id')->get();
-        $rows = $models->map(fn ($po) => [
-            'number' => $po->number, 'date' => $this->dateText($po->ordered_at),
-            'vendor' => $po->vendor?->name ?: '-', 'or' => $po->purchaseRequest?->number ?: '-',
-            'site' => $this->campName($po->purchaseRequest?->camp), 'destination' => $po->delivery_destination === 'direct_site' ? 'Langsung site' : 'Gudang kantor',
-            'status' => $this->label($po->status), 'value' => $user->canSeePrices() ? $this->money($po->grand_total) : 'Disembunyikan',
-            '_status_tone' => $this->tone($po->status),
-            '_url' => route('purchase-orders.review', ['purchaseOrder' => $po, 'from' => 'reports']),
-        ]);
+        $rows = $models->map(function ($po) use ($user) {
+            $sourceCreditNoteNumbers = $po->items
+                ->map(fn ($item) => $item->requestItem?->sourceCreditNoteItem?->creditNote?->number)
+                ->filter()
+                ->unique()
+                ->values();
+
+            return [
+                'number' => $po->number, 'date' => $this->dateText($po->ordered_at),
+                'vendor' => $po->vendor?->name ?: '-', 'or' => $po->purchaseRequest?->number ?: '-',
+                'type_reference' => $sourceCreditNoteNumbers->isNotEmpty()
+                    ? 'Pengajuan Ulang / CN '.$sourceCreditNoteNumbers->join(', CN ')
+                    : 'Pengadaan Awal',
+                'site' => $this->campName($po->purchaseRequest?->camp), 'destination' => $po->delivery_destination === 'direct_site' ? 'Langsung site' : 'Gudang kantor',
+                'status' => $this->label($po->status), 'value' => $user->canSeePrices() ? $this->money($po->grand_total) : 'Disembunyikan',
+                '_status_tone' => $this->tone($po->status),
+                '_url' => route('purchase-orders.review', ['purchaseOrder' => $po, 'from' => 'reports']),
+            ];
+        });
 
         return $this->payload('Report Purchase Order', 'Daftar PO beserta tujuan, status, dan nilainya.', [
             ['key' => 'number', 'label' => 'No. PO'], ['key' => 'date', 'label' => 'Tanggal'], ['key' => 'vendor', 'label' => 'Vendor'],
-            ['key' => 'or', 'label' => 'Order Request'], ['key' => 'site', 'label' => 'Site'], ['key' => 'destination', 'label' => 'Tujuan'],
+            ['key' => 'or', 'label' => 'Order Request'], ['key' => 'type_reference', 'label' => 'Jenis / Referensi'],
+            ['key' => 'site', 'label' => 'Site'], ['key' => 'destination', 'label' => 'Tujuan'],
             ['key' => 'status', 'label' => 'Status', 'type' => 'status'], ['key' => 'value', 'label' => 'Nilai', 'align' => 'right'],
         ], $rows, [
             $this->kpi('Total PO', $models->count(), 'Sesuai filter'),
@@ -525,7 +547,11 @@ class ReportService
 
     private function purchaseOrderQuery(User $user, array $filters)
     {
-        $query = PurchaseOrder::with(['vendor', 'purchaseRequest.camp.company', 'items']);
+        $query = PurchaseOrder::with([
+            'vendor',
+            'purchaseRequest.camp.company',
+            'items.requestItem.sourceCreditNoteItem.creditNote',
+        ]);
         $this->scopeNestedCamp($query, $user, $filters, 'purchaseRequest.camp');
         $this->date($query, 'ordered_at', $filters);
         return $query->when($filters['vendor_id'], fn ($q, $id) => $q->where('vendor_id', $id))

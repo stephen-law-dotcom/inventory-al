@@ -74,6 +74,16 @@ class DashboardInventoryReminderTest extends TestCase
             ->assertSeeText('356 pcs')
             ->assertSeeText('Perlu Order')
             ->assertSeeText($incompleteItem->name)
-            ->assertSeeText('Parameter EOQ/ROP belum lengkap');
+            ->assertSeeText('Parameter EOQ/ROP belum lengkap')
+            ->assertSeeText('Ringkasan Aktivitas')
+            ->assertSeeText('Hari Ini')
+            ->assertSeeText('7 Hari')
+            ->assertSeeText('Bulan Ini');
+
+        foreach (['today', '7_days', 'month'] as $period) {
+            $this->actingAs($user)
+                ->get(route('dashboard', ['period' => $period]))
+                ->assertOk();
+        }
     }
 }

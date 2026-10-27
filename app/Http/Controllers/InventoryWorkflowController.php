@@ -319,6 +319,8 @@ class InventoryWorkflowController extends Controller
             'purchaseRequest.camp',
             'unit',
             'inventoryItem',
+            'sourceCreditNoteItem.creditNote',
+            'sourceCreditNoteItem.purchaseOrderItem.purchaseOrder',
             'quotations.vendor',
             'selectedQuotation.vendor',
             'selectedQuotations.vendor',
@@ -1186,6 +1188,14 @@ class InventoryWorkflowController extends Controller
             'date_from' => preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateFrom) ? $dateFrom : null,
             'date_to' => preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateTo) ? $dateTo : null,
         ];
+        $dashboardPeriod = in_array(request('period'), ['today', '7_days', 'month'], true)
+            ? request('period')
+            : 'month';
+        $dashboardPeriodStart = match ($dashboardPeriod) {
+            'today' => now()->startOfDay(),
+            '7_days' => now()->subDays(6)->startOfDay(),
+            default => now()->startOfMonth(),
+        };
         $transactionPaginator = null;
 
         $purchaseRequestsQuery = PurchaseRequest::with([
@@ -1194,6 +1204,8 @@ class InventoryWorkflowController extends Controller
             'items.purchaseRequest',
             'items.unit',
             'items.inventoryItem',
+            'items.sourceCreditNoteItem.creditNote',
+            'items.sourceCreditNoteItem.purchaseOrderItem.purchaseOrder',
             'items.quotations.vendor',
             'items.selectedQuotation.vendor',
             'items.selectedQuotations.vendor',
@@ -1236,6 +1248,8 @@ class InventoryWorkflowController extends Controller
             'vendor',
             'items.inventoryItem',
             'items.requestItem.unit',
+            'items.requestItem.sourceCreditNoteItem.creditNote',
+            'items.requestItem.sourceCreditNoteItem.purchaseOrderItem.purchaseOrder',
             'items.goodsReceiptItems.goodsReceipt',
             'items.goodsReceiptItems.creditNoteItems.creditNote',
             'items.dispatchItems.siteDispatch',
@@ -1341,9 +1355,12 @@ class InventoryWorkflowController extends Controller
             $usageLogs = $transactionPaginator->getCollection();
         } else {
             $usageLogs = $usageLogsQuery
+                ->when($activeMenu === 'dashboard', fn ($query) => $query
+                    ->whereDate('used_at', '>=', $dashboardPeriodStart->toDateString())
+                    ->whereDate('used_at', '<=', now()->toDateString()))
                 ->latest('used_at')
                 ->latest('id')
-                ->when($activeMenu !== 'reports', fn ($query) => $query->limit($activeMenu === 'dashboard' ? 100 : 15))
+                ->when(! in_array($activeMenu, ['dashboard', 'reports'], true), fn ($query) => $query->limit(15))
                 ->get();
         }
 
@@ -1441,6 +1458,8 @@ class InventoryWorkflowController extends Controller
             'purchaseOrders' => $purchaseOrders,
             'creditNotes' => $creditNotes,
             'usageSummary' => $usageSummary,
+            'dashboardPeriod' => $dashboardPeriod,
+            'dashboardPeriodStart' => $dashboardPeriodStart,
             'siteReceiptIssueItems' => SiteReceiptItem::with([
                 'siteReceipt.siteDispatch.camp',
                 'dispatchItem.inventoryItem',

@@ -67,6 +67,7 @@
                                         <tbody>
                                         @foreach ($vendorItems as $requestItem)
                                             @php
+                                                $sourceCreditNote = $requestItem->sourceCreditNoteItem?->creditNote;
                                                 $selectedQuotations = $requestItem->selectedQuotations;
                                                 $recommendedQuotation = $requestItem->quotations
                                                     ->where('available_quantity', '>=', $requestItem->quantity)
@@ -76,7 +77,20 @@
                                             @endphp
                                             <tr class="clickable-row" data-href="{{ route('vendor-prices.review', array_merge(['purchaseRequestItem' => $requestItem], $vendorReviewQuery)) }}" title="Klik untuk membuka detail harga vendor {{ $requestItem->inventoryItem->name }}">
                                                 <td>{{ $requestItem->unit?->code }} - {{ $requestItem->unit?->name }}</td>
-                                                <td>{{ $requestItem->inventoryItem->name }}<br><span class="muted">SKU {{ $requestItem->inventoryItem->sku }}{{ $requestItem->specification ? ' - '.$requestItem->specification : '' }}</span></td>
+                                                <td>
+                                                    {{ $requestItem->inventoryItem->name }}
+                                                    @if ($sourceCreditNote)
+                                                        <div style="margin-top:5px">
+                                                            <span class="pill">Pengajuan Ulang</span>
+                                                            @if ($currentUser->hasPermission('credit_notes.view'))
+                                                                <a class="muted" href="{{ route('credit-notes.review', $sourceCreditNote) }}" onclick="event.stopPropagation()">CN {{ $sourceCreditNote->number }}</a>
+                                                            @else
+                                                                <span class="muted">CN {{ $sourceCreditNote->number }}</span>
+                                                            @endif
+                                                        </div>
+                                                    @endif
+                                                    <span class="muted">SKU {{ $requestItem->inventoryItem->sku }}{{ $requestItem->specification ? ' - '.$requestItem->specification : '' }}</span>
+                                                </td>
                                                 <td>{{ $requestItem->quantity }} {{ $requestItem->uom ?? $requestItem->inventoryItem->uom }}</td>
                                                 <td>
                                                     <span class="pill {{ $quotationCount > 0 ? 'ok' : 'wait' }}">{{ $quotationCount }} penawaran</span>

@@ -114,15 +114,36 @@ class MasterDataTransferService
 
     private function importVendor(array $row): void
     {
+        $existing = filled($row['code'] ?? null)
+            ? Vendor::where('code', $row['code'])->first()
+            : null;
+
+        if (filled($row['code'] ?? null) && ! $existing) {
+            throw ValidationException::withMessages([
+                'code' => 'Kode vendor tidak ditemukan. Kosongkan kode untuk menambahkan vendor baru.',
+            ]);
+        }
+
         $data = Validator::make($row, [
-            'code' => ['required', 'string', 'max:50'],
+            'code' => ['nullable', 'string', 'max:50'],
             'name' => ['required', 'string', 'max:255'],
             'contact_person' => ['nullable', 'string', 'max:255'],
             'phone' => ['nullable', 'string', 'max:50'],
             'address' => ['nullable', 'string'],
         ])->validate();
 
-        Vendor::updateOrCreate(['code' => $data['code']], $data);
+        unset($data['code']);
+
+        if ($existing) {
+            $existing->update($data);
+
+            return;
+        }
+
+        Vendor::create([
+            'code' => DocumentNumberService::nextVendorCode(),
+            ...$data,
+        ]);
     }
 
     private function importUnit(array $row): void

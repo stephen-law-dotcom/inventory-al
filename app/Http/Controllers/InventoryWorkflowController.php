@@ -2506,13 +2506,19 @@ class InventoryWorkflowController extends Controller
     {
         $this->ensureCanManageMasterData();
 
-        $vendor = Vendor::create($request->validate([
-            'code' => ['required', 'string', 'max:50', 'unique:vendors,code'],
+        $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'contact_person' => ['nullable', 'string', 'max:255'],
             'phone' => ['nullable', 'string', 'max:50'],
             'address' => ['nullable', 'string'],
-        ]));
+        ]);
+
+        $vendor = DB::transaction(function () use ($data) {
+            return Vendor::create([
+                'code' => DocumentNumberService::nextVendorCode(),
+                ...$data,
+            ]);
+        });
         AuditLogger::log('master.created', 'Master vendor ditambahkan.', $vendor);
 
         return redirect()->route('master.vendors')->with('success', 'Master vendor ditambahkan.');
@@ -2523,7 +2529,6 @@ class InventoryWorkflowController extends Controller
         $this->ensureCanManageMasterData();
 
         $vendor->update($request->validate([
-            'code' => ['required', 'string', 'max:50', Rule::unique('vendors', 'code')->ignore($vendor)],
             'name' => ['required', 'string', 'max:255'],
             'contact_person' => ['nullable', 'string', 'max:255'],
             'phone' => ['nullable', 'string', 'max:50'],
@@ -4266,7 +4271,7 @@ class InventoryWorkflowController extends Controller
 
         $receipt = DB::transaction(function () use ($data, $purchaseOrder) {
             $receipt = GoodsReceipt::create([
-                'number' => $this->nextNumber('GR', GoodsReceipt::class),
+                'number' => DocumentNumberService::nextGoodsReceipt(),
                 'invoice_number' => $data['invoice_number'],
                 'purchase_request_id' => $purchaseOrder->purchase_request_id,
                 'purchase_order_id' => $purchaseOrder->id,
@@ -4852,7 +4857,7 @@ class InventoryWorkflowController extends Controller
 
         $result = DB::transaction(function () use ($data, $siteDispatch) {
             $receipt = SiteReceipt::create([
-                'number' => $this->nextNumber('SR', SiteReceipt::class),
+                'number' => DocumentNumberService::nextSiteReceipt(),
                 'invoice_number' => null,
                 'site_dispatch_id' => $siteDispatch->id,
                 'received_at' => now()->toDateString(),
@@ -5358,7 +5363,7 @@ class InventoryWorkflowController extends Controller
                 $stockOpname->items()->delete();
             } else {
                 $stockOpname = new StockOpname([
-                    'number' => $this->nextNumber('SO', StockOpname::class),
+                    'number' => DocumentNumberService::nextStockOpname(),
                     'created_by' => auth()->id(),
                 ]);
             }
@@ -5502,11 +5507,6 @@ class InventoryWorkflowController extends Controller
         }
 
         return $purchaseRequestItem->director_approval_status === 'approved' ? 'approved' : 'not_required';
-    }
-
-    private function nextNumber(string $prefix, string $modelClass): string
-    {
-        return DocumentNumberService::next($prefix);
     }
 
     private function creditNoteProblemQuantity(string $condition, int $quantityReceived, int $remainingQuantity): int

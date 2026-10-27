@@ -705,7 +705,7 @@ class ExampleTest extends TestCase
 
         $purchaseRequest = PurchaseRequest::where('requested_by', $user->name)->latest('id')->firstOrFail();
         $companyCode = str_contains(strtolower($purchaseRequest->camp->company_name), 'adimitra') ? 'AML-OR' : 'JP-OR';
-        $this->assertMatchesRegularExpression('/^\d{3}\/'.preg_quote($companyCode, '/').'\/'.now()->format('y').'$/', $purchaseRequest->number);
+        $this->assertMatchesRegularExpression('/^\d{3}\/'.preg_quote($companyCode, '/').'\/'.now()->format('m-y').'$/', $purchaseRequest->number);
 
         $this->actingAs($user)
             ->post(route('purchase-requests.post', $purchaseRequest))
@@ -1651,11 +1651,10 @@ class ExampleTest extends TestCase
 
     public function test_master_vendor_can_be_updated_and_deleted_when_unused(): void
     {
-        $user = User::where('email', 'admin@sisteminventory.test')->firstOrFail();
+        $user = User::where('email', 'admin@adimitralestari.com')->firstOrFail();
 
         $this->actingAs($user)
             ->post(route('vendors.store'), [
-                'code' => 'VDR-TST',
                 'name' => 'Vendor Test',
                 'contact_person' => 'Rina',
                 'phone' => '081299999999',
@@ -1663,11 +1662,12 @@ class ExampleTest extends TestCase
             ])
             ->assertSessionHas('success');
 
-        $vendor = Vendor::where('code', 'VDR-TST')->firstOrFail();
+        $vendor = Vendor::where('name', 'Vendor Test')->firstOrFail();
+        $originalCode = $vendor->code;
 
         $this->actingAs($user)
             ->put(route('vendors.update', $vendor), [
-                'code' => 'VDR-TST-2',
+                'code' => 'KODE-TIDAK-BOLEH-BERUBAH',
                 'name' => 'Vendor Test Update',
                 'contact_person' => 'Doni',
                 'phone' => '081288888888',
@@ -1677,7 +1677,7 @@ class ExampleTest extends TestCase
 
         $this->assertDatabaseHas('vendors', [
             'id' => $vendor->id,
-            'code' => 'VDR-TST-2',
+            'code' => $originalCode,
             'name' => 'Vendor Test Update',
         ]);
 
@@ -2981,7 +2981,7 @@ class ExampleTest extends TestCase
         ]);
 
         $creditNote = CreditNote::where('purchase_order_id', $purchaseOrder->id)->firstOrFail();
-        $this->assertMatchesRegularExpression('/^\d{3}\/AML-CN\/\d{2}$/', $creditNote->number);
+        $this->assertMatchesRegularExpression('/^\d{3}\/AML-CN\/\d{2}-\d{2}$/', $creditNote->number);
         $this->actingAs($user)
             ->put(route('credit-notes.update', $creditNote), [
                 'status' => 'credited',
@@ -3335,7 +3335,7 @@ class ExampleTest extends TestCase
         ])->assertSessionHas('success');
 
         $dispatch = SiteDispatch::latest('id')->firstOrFail();
-        $this->assertMatchesRegularExpression('/^\d{3}\/[A-Z0-9]+-SPB\/\d{2}$/', $dispatch->number);
+        $this->assertMatchesRegularExpression('/^\d{3}\/[A-Z0-9]+-SPB\/\d{2}-\d{2}$/', $dispatch->number);
         $this->assertDatabaseHas('site_dispatch_items', [
             'site_dispatch_id' => $dispatch->id,
             'goods_receipt_item_id' => $receiptItem->id,

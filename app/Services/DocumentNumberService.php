@@ -4,11 +4,44 @@ namespace App\Services;
 
 use App\Models\Camp;
 use App\Models\DocumentSequence;
+use App\Models\Vendor;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class DocumentNumberService
 {
+    public static function nextVendorCode(): string
+    {
+        return DB::transaction(function () {
+            DB::table('document_sequences')->insertOrIgnore([
+                'prefix' => 'VENDOR',
+                'period' => 'GLOBAL',
+                'last_number' => 0,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $sequence = DocumentSequence::where('prefix', 'VENDOR')
+                ->where('period', 'GLOBAL')
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $highestExistingCode = Vendor::query()
+                ->pluck('code')
+                ->filter(fn ($code) => preg_match('/^\d+$/', (string) $code))
+                ->map(fn ($code) => (int) $code)
+                ->max() ?? 0;
+
+            if ($sequence->last_number < $highestExistingCode) {
+                $sequence->update(['last_number' => $highestExistingCode]);
+            }
+
+            $sequence->increment('last_number');
+
+            return str_pad((string) $sequence->fresh()->last_number, 3, '0', STR_PAD_LEFT);
+        });
+    }
+
     public static function next(string $prefix): string
     {
         $period = now()->format('Ymd');
@@ -38,9 +71,10 @@ class DocumentNumberService
     {
         $companyCode = self::orderRequestCompanyCode($camp);
         $period = now()->format('y');
+        $documentPeriod = now()->format('m-y');
         $prefix = 'OR:' . $companyCode;
 
-        return DB::transaction(function () use ($prefix, $period, $companyCode) {
+        return DB::transaction(function () use ($prefix, $period, $companyCode, $documentPeriod) {
             $sequence = DocumentSequence::where('prefix', $prefix)
                 ->where('period', $period)
                 ->lockForUpdate()
@@ -57,7 +91,7 @@ class DocumentNumberService
             $sequence->increment('last_number');
             $sequence->refresh();
 
-            return str_pad((string) $sequence->last_number, 3, '0', STR_PAD_LEFT) . '/' . $companyCode . '/' . $period;
+            return str_pad((string) $sequence->last_number, 3, '0', STR_PAD_LEFT) . '/' . $companyCode . '/' . $documentPeriod;
         });
     }
 
@@ -65,9 +99,10 @@ class DocumentNumberService
     {
         $companyCode = 'AML';
         $period = now()->format('y');
+        $documentPeriod = now()->format('m-y');
         $prefix = 'CN:' . $companyCode;
 
-        return DB::transaction(function () use ($prefix, $period, $companyCode) {
+        return DB::transaction(function () use ($prefix, $period, $companyCode, $documentPeriod) {
             $sequence = DocumentSequence::where('prefix', $prefix)
                 ->where('period', $period)
                 ->lockForUpdate()
@@ -84,7 +119,7 @@ class DocumentNumberService
             $sequence->increment('last_number');
             $sequence->refresh();
 
-            return str_pad((string) $sequence->last_number, 3, '0', STR_PAD_LEFT) . '/' . $companyCode . '-CN/' . $period;
+            return str_pad((string) $sequence->last_number, 3, '0', STR_PAD_LEFT) . '/' . $companyCode . '-CN/' . $documentPeriod;
         });
     }
 
@@ -92,9 +127,10 @@ class DocumentNumberService
     {
         $companyCode = 'AML';
         $period = now()->format('y');
+        $documentPeriod = now()->format('m-y');
         $prefix = 'SPB:'.$companyCode;
 
-        return DB::transaction(function () use ($prefix, $period, $companyCode) {
+        return DB::transaction(function () use ($prefix, $period, $companyCode, $documentPeriod) {
             $sequence = DocumentSequence::where('prefix', $prefix)
                 ->where('period', $period)
                 ->lockForUpdate()
@@ -106,8 +142,23 @@ class DocumentNumberService
 
             $sequence->increment('last_number');
 
-            return str_pad((string) $sequence->fresh()->last_number, 3, '0', STR_PAD_LEFT).'/'.$companyCode.'-SPB/'.$period;
+            return str_pad((string) $sequence->fresh()->last_number, 3, '0', STR_PAD_LEFT).'/'.$companyCode.'-SPB/'.$documentPeriod;
         });
+    }
+
+    public static function nextGoodsReceipt(): string
+    {
+        return self::nextAnnualDocument('GR');
+    }
+
+    public static function nextSiteReceipt(): string
+    {
+        return self::nextAnnualDocument('SR');
+    }
+
+    public static function nextStockOpname(): string
+    {
+        return self::nextAnnualDocument('SO');
     }
 
     public static function purchaseOrderNumber(string $orderRequestNumber, int $vendorSequence, bool $hasMultipleVendors, bool $isRetry = false): string
@@ -116,7 +167,7 @@ class DocumentNumberService
             return $orderRequestNumber;
         }
 
-        if (preg_match('/^(\d{3})(?:-\d+)?\/(.+)\/(\d{2})$/', $orderRequestNumber, $matches)) {
+        if (preg_match('/^(\d{3})(?:-\d+)?\/(.+)\/(\d{2}(?:-\d{2})?)$/', $orderRequestNumber, $matches)) {
             $suffix = $isRetry ? '-R' : '';
             $vendorSuffix = $hasMultipleVendors ? '-' . $vendorSequence : '';
 
@@ -156,5 +207,33 @@ class DocumentNumberService
             ->implode('');
 
         return substr($initials ?: 'COMP', 0, 4);
+    }
+
+    private static function nextAnnualDocument(string $documentCode): string
+    {
+        $companyCode = 'AML';
+        $period = now()->format('y');
+        $documentPeriod = now()->format('m-y');
+        $prefix = $documentCode.':'.$companyCode;
+
+        return DB::transaction(function () use ($prefix, $period, $documentCode, $companyCode, $documentPeriod) {
+            DB::table('document_sequences')->insertOrIgnore([
+                'prefix' => $prefix,
+                'period' => $period,
+                'last_number' => 0,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $sequence = DocumentSequence::where('prefix', $prefix)
+                ->where('period', $period)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $sequence->increment('last_number');
+
+            return str_pad((string) $sequence->fresh()->last_number, 3, '0', STR_PAD_LEFT)
+                .'/'.$companyCode.'-'.$documentCode.'/'.$documentPeriod;
+        });
     }
 }

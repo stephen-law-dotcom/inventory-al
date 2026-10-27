@@ -292,7 +292,9 @@
 
             @if ($type === 'vendors')
                 <div class="row">
-                    <label>Kode vendor <input name="code" value="{{ old('code', $record->code ?? '') }}" required placeholder="VDR-001"></label>
+                    <label>Kode vendor
+                        <input value="{{ $isEdit ? $record->code : 'Dibuat otomatis setelah disimpan' }}" disabled>
+                    </label>
                     <label>Nama vendor <input name="name" value="{{ old('name', $record->name ?? '') }}" required></label>
                 </div>
                 <div class="row">

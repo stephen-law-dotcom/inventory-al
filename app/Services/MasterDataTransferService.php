@@ -148,6 +148,12 @@ class MasterDataTransferService
 
     private function importUnit(array $row): void
     {
+        foreach (['code', 'name', 'type', 'serial_number', 'camp_code'] as $field) {
+            if (array_key_exists($field, $row) && $row[$field] !== null) {
+                $row[$field] = (string) $row[$field];
+            }
+        }
+
         $data = Validator::make($row, [
             'code' => ['required', 'string', 'max:50'],
             'name' => ['required', 'string', 'max:255'],
@@ -205,17 +211,13 @@ class MasterDataTransferService
         $category = ItemCategory::where('code', $data['category_code'])->firstOrFail();
         $usesPlanning = (bool) $category->uses_inventory_planning;
 
-        if (! $usesPlanning && ! isset($data['minimum_stock'])) {
-            throw ValidationException::withMessages(['minimum_stock' => 'Minimum stock wajib untuk kategori tanpa EOQ/ROP.']);
-        }
-
         InventoryItem::updateOrCreate(['sku' => $data['sku']], [
             'name' => $data['name'],
             'description' => $data['description'] ?? null,
             'item_category_id' => $category->id,
             'category' => $category->name,
             'uom' => $data['uom'],
-            'minimum_stock' => $usesPlanning ? 0 : (int) $data['minimum_stock'],
+            'minimum_stock' => $usesPlanning ? 0 : (int) ($data['minimum_stock'] ?? 0),
             'forecast_annual_demand' => $usesPlanning ? (float) ($data['forecast_annual_demand'] ?? 0) : 0,
             'lead_time_days' => $usesPlanning ? (int) ($data['lead_time_days'] ?? 0) : 0,
             'safety_stock' => $usesPlanning ? (float) ($data['safety_stock'] ?? 0) : 0,

@@ -34,4 +34,9 @@ class VendorQuotation extends Model
     {
         return $this->belongsTo(Vendor::class);
     }
+
+    public function purchaseOrderItem()
+    {
+        return $this->hasOne(PurchaseOrderItem::class);
+    }
 }

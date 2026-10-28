@@ -16,6 +16,7 @@ class PurchaseOrder extends Model
         'expected_at' => 'date',
         'proposed_at' => 'datetime',
         'checked_at' => 'datetime',
+        'ppic_reviewed_at' => 'datetime',
         'approved_at' => 'datetime',
         'rejected_at' => 'datetime',
         'submitted_at' => 'datetime',
@@ -26,6 +27,8 @@ class PurchaseOrder extends Model
         'ppn_percent' => 'decimal:2',
         'ppn_amount' => 'decimal:2',
         'grand_total' => 'decimal:2',
+        'approval_amount_idr' => 'decimal:2',
+        'requires_main_director_approval' => 'boolean',
         'reference_exchange_rate' => 'decimal:6',
         'exchange_rate' => 'decimal:6',
         'exchange_rate_date' => 'date',
@@ -86,6 +89,11 @@ class PurchaseOrder extends Model
     public function approvedBy()
     {
         return $this->belongsTo(User::class, 'approved_by');
+    }
+
+    public function ppicReviewedBy()
+    {
+        return $this->belongsTo(User::class, 'ppic_reviewed_by');
     }
 
     public function rejectedBy()

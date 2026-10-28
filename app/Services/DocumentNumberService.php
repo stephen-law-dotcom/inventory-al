@@ -163,18 +163,14 @@ class DocumentNumberService
 
     public static function purchaseOrderNumber(string $orderRequestNumber, int $vendorSequence, bool $hasMultipleVendors, bool $isRetry = false): string
     {
-        if (! $hasMultipleVendors && ! $isRetry) {
-            return $orderRequestNumber;
-        }
-
         if (preg_match('/^(\d{3})(?:-\d+)?\/(.+)\/(\d{2}(?:-\d{2})?)$/', $orderRequestNumber, $matches)) {
             $suffix = $isRetry ? '-R' : '';
-            $vendorSuffix = $hasMultipleVendors ? '-' . $vendorSequence : '';
+            $vendorSuffix = '-' . $vendorSequence;
 
             return $matches[1] . $suffix . $vendorSuffix . '/' . $matches[2] . '/' . $matches[3];
         }
 
-        return $orderRequestNumber . ($isRetry ? '-R' : '') . ($hasMultipleVendors ? '-' . $vendorSequence : '');
+        return $orderRequestNumber . ($isRetry ? '-R' : '') . '-' . $vendorSequence;
     }
 
     public static function orderRequestCompanyCode(Camp $camp): string

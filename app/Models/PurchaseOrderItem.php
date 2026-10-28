@@ -29,6 +29,11 @@ class PurchaseOrderItem extends Model
         return $this->belongsTo(PurchaseRequestItem::class, 'purchase_request_item_id');
     }
 
+    public function vendorQuotation()
+    {
+        return $this->belongsTo(VendorQuotation::class);
+    }
+
     public function inventoryItem()
     {
         return $this->belongsTo(InventoryItem::class);

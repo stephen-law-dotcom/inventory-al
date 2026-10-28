@@ -29,7 +29,11 @@ class PurchaseOrderWorkflowService
 
     public function validateIntegrity(PurchaseOrder $purchaseOrder): void
     {
-        $purchaseOrder->loadMissing(['items.requestItem.inventoryItem', 'purchaseRequest']);
+        $purchaseOrder->loadMissing([
+            'items.requestItem.inventoryItem',
+            'items.vendorQuotation',
+            'purchaseRequest',
+        ]);
 
         if ($purchaseOrder->items->isEmpty()) {
             throw ValidationException::withMessages(['purchase_order' => 'Purchase order belum memiliki barang.']);
@@ -38,6 +42,7 @@ class PurchaseOrderWorkflowService
         $calculatedSubtotal = 0.0;
         foreach ($purchaseOrder->items as $item) {
             $requestItem = $item->requestItem;
+            $vendorQuotation = $item->vendorQuotation;
             $expectedTotal = (float) $item->unit_price * (int) $item->quantity_ordered;
 
             if (! $requestItem
@@ -52,6 +57,16 @@ class PurchaseOrderWorkflowService
 
             if ((int) $item->quantity_ordered <= 0 || (float) $item->unit_price <= 0 || abs((float) $item->total - $expectedTotal) > 0.01) {
                 throw ValidationException::withMessages(['purchase_order' => 'Qty, harga, atau total '.$requestItem->inventoryItem->name.' tidak valid.']);
+            }
+
+            if ($item->vendor_quotation_id && (! $vendorQuotation
+                || (int) $vendorQuotation->purchase_request_item_id !== (int) $requestItem->id
+                || (int) $vendorQuotation->vendor_id !== (int) $purchaseOrder->vendor_id
+                || (int) $vendorQuotation->selected_quantity !== (int) $item->quantity_ordered
+                || (string) $vendorQuotation->currency_code !== (string) $item->currency_code)) {
+                throw ValidationException::withMessages([
+                    'purchase_order' => 'Alokasi vendor untuk '.$requestItem->inventoryItem->name.' tidak sesuai dengan detail PO.',
+                ]);
             }
 
             $calculatedSubtotal += $expectedTotal;
@@ -73,10 +88,13 @@ class PurchaseOrderWorkflowService
         }
 
         foreach ($purchaseOrder->items->pluck('requestItem')->unique('id') as $requestItem) {
-            $allocatedQuantity = (int) PurchaseOrderItem::where('purchase_request_item_id', $requestItem->id)->sum('quantity_ordered');
-            if ($allocatedQuantity !== $requestItem->approvedQuantity()) {
+            $allocatedQuantity = (int) PurchaseOrderItem::query()
+                ->where('purchase_request_item_id', $requestItem->id)
+                ->whereHas('purchaseOrder', fn ($query) => $query->where('status', '!=', 'rejected'))
+                ->sum('quantity_ordered');
+            if ($allocatedQuantity > $requestItem->approvedQuantity()) {
                 throw ValidationException::withMessages([
-                    'purchase_order' => 'Total qty PO untuk '.$requestItem->inventoryItem->name.' harus sama dengan qty final yang disetujui.',
+                    'purchase_order' => 'Total qty PO aktif untuk '.$requestItem->inventoryItem->name.' melebihi qty final yang disetujui.',
                 ]);
             }
         }

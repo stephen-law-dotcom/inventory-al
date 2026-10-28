@@ -72,24 +72,35 @@ class PurchaseRequestWorkflowService
 
     public function purchaseOrderState(PurchaseRequest $purchaseRequest): array
     {
-        $purchaseRequest->load(['items.purchaseOrderItems.purchaseOrder']);
+        $purchaseRequest->load([
+            'items.selectedQuotations',
+            'items.purchaseOrderItems.purchaseOrder',
+        ]);
         $submittedStatuses = ['submitted', 'issued', 'partial_received', 'received'];
         $itemUpdates = [];
 
         foreach ($purchaseRequest->items as $requestItem) {
             $purchaseOrderItems = $requestItem->purchaseOrderItems;
             $purchaseOrders = $purchaseOrderItems->pluck('purchaseOrder')->filter()->unique('id');
-            $activePurchaseOrderIds = $purchaseOrders->where('status', '!=', 'rejected')->pluck('id');
             $activePurchaseOrders = $purchaseOrders->where('status', '!=', 'rejected');
-            $activeAllocatedQuantity = (int) $purchaseOrderItems
-                ->whereIn('purchase_order_id', $activePurchaseOrderIds)
-                ->sum('quantity_ordered');
+            $committedAllocatedQuantity = (int) $purchaseOrderItems->sum('quantity_ordered');
+            $linkedQuotationIds = $purchaseOrderItems
+                ->pluck('vendor_quotation_id')
+                ->filter()
+                ->map(fn ($id) => (int) $id);
+            $hasPendingAllocation = $requestItem->selectedQuotations->isNotEmpty()
+                && ($purchaseOrderItems->isEmpty()
+                    || ($linkedQuotationIds->isNotEmpty()
+                        && $requestItem->selectedQuotations->contains(
+                            fn ($quotation) => ! $linkedQuotationIds->contains((int) $quotation->id)
+                        )));
 
             $status = match (true) {
+                $hasPendingAllocation => 'vendor_selected',
                 $purchaseOrders->isNotEmpty() && $activePurchaseOrders->isEmpty() => 'rejected',
                 $activePurchaseOrders->isNotEmpty() && $activePurchaseOrders->every(fn ($po) => $po->status === 'received') => 'goods_received',
                 $activePurchaseOrders->contains(fn ($po) => in_array($po->status, ['partial_received', 'received'], true)) => 'partial_received',
-                $activeAllocatedQuantity === $requestItem->approvedQuantity()
+                $committedAllocatedQuantity === $requestItem->approvedQuantity()
                     && $activePurchaseOrders->isNotEmpty()
                     && $activePurchaseOrders->every(fn ($po) => in_array($po->status, $submittedStatuses, true)) => 'po_issued',
                 default => 'po_created',
@@ -106,6 +117,7 @@ class PurchaseRequestWorkflowService
         $statuses = collect($itemUpdates)->pluck('status');
         $requestStatus = match (true) {
             $statuses->contains('rejected') => 'rejected',
+            $statuses->contains('vendor_selected') => 'vendor_selected',
             $statuses->isNotEmpty() && $statuses->every(fn ($status) => $status === 'goods_received') => 'goods_received',
             $statuses->contains(fn ($status) => in_array($status, ['partial_received', 'goods_received'], true)) => 'partial_received',
             $statuses->isNotEmpty() && $statuses->every(fn ($status) => $status === 'po_issued') => 'po_issued',

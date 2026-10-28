@@ -53,7 +53,11 @@ class DocumentNumberFormatTest extends TestCase
             DocumentNumberService::purchaseOrderNumber('005/AML-OR/01-26', 1, true)
         );
         $this->assertSame(
-            '005-R/AML-OR/01-26',
+            '005-1/AML-OR/01-26',
+            DocumentNumberService::purchaseOrderNumber('005/AML-OR/01-26', 1, false)
+        );
+        $this->assertSame(
+            '005-R-1/AML-OR/01-26',
             DocumentNumberService::purchaseOrderNumber('005/AML-OR/01-26', 1, false, true)
         );
         $this->assertSame(

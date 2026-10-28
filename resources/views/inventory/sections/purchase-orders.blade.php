@@ -1,6 +1,21 @@
             @if ($activeMenu === 'purchase-orders')
                 @php
                     $purchaseOrderHistoryStatuses = ['received', 'rejected'];
+                    $readyPurchaseOrderAllocationCount = $purchaseRequests
+                        ->flatMap->items
+                        ->filter(fn ($item) => $item->status === 'vendor_selected'
+                            && $item->procurement_approval_status === 'approved'
+                            && $item->selectedQuotations->isNotEmpty())
+                        ->sum(function ($item) {
+                            $processedQuotationIds = $item->purchaseOrderItems
+                                ->pluck('vendor_quotation_id')
+                                ->filter()
+                                ->map(fn ($id) => (int) $id);
+
+                            return $item->selectedQuotations
+                                ->reject(fn ($quotation) => $processedQuotationIds->contains((int) $quotation->id))
+                                ->count();
+                        });
                     $purchaseOrderRows = match ($workflowTab) {
                         'history' => $purchaseOrders->whereIn('status', $purchaseOrderHistoryStatuses),
                         'approval' => $purchaseOrders->filter(fn ($po) => $po->status === 'draft' && $po->proposed_by && (! $po->checked_by || ! $po->approved_by)),
@@ -18,7 +33,7 @@
                                 <h2 style="margin-bottom:4px">Pembuatan Purchase Order</h2>
                             </div>
                             <div class="actions">
-                                <span class="pill ok">{{ $purchaseRequests->sum(fn ($pr) => $pr->items->where('status', 'vendor_selected')->filter(fn ($item) => ! $item->purchaseOrderItem)->count()) }} item siap PO</span>
+                                <span class="pill ok">{{ $readyPurchaseOrderAllocationCount }} alokasi siap dibuat PO</span>
                                 <a class="button" href="{{ route('purchase-orders.create', $companyQuery) }}">+ Tambah PO</a>
                             </div>
                         </div>
@@ -52,8 +67,11 @@
                                     ! $purchaseOrder->proposed_by && (bool) $purchaseOrder->rejected_at => 'Dikembalikan untuk revisi',
                                     ! $purchaseOrder->proposed_by => 'Draft',
                                     ! $purchaseOrder->checked_by => 'Menunggu Kepala Purchasing',
-                                    ! $purchaseOrder->approved_by => 'Menunggu Direktur',
-                                    default => 'Disetujui Direktur',
+                                    $purchaseOrder->approved_by && ! $purchaseOrder->ppic_reviewed_by => 'Disetujui (Alur Lama)',
+                                    ! $purchaseOrder->ppic_reviewed_by => 'Menunggu PPIC',
+                                    ! $purchaseOrder->approved_by => 'Menunggu Direktur Utama',
+                                    $purchaseOrder->requires_main_director_approval => 'Disetujui Direktur Utama',
+                                    default => 'Disetujui PPIC (Delegasi)',
                                 };
                             @endphp
                             <tr class="clickable-row" data-href="{{ $reviewUrl }}" title="Klik untuk membuka detail {{ $purchaseOrder->number }}">
@@ -97,7 +115,10 @@
                                     <div class="po-approval-list">
                                         <span class="approval-state {{ $purchaseOrder->proposed_by ? 'done' : 'waiting' }}">Admin Purchasing · {{ $purchaseOrder->proposed_by ? 'Diajukan' : 'Belum' }}</span>
                                         <span class="approval-state {{ $purchaseOrder->checked_by ? 'done' : 'waiting' }}">Kepala Purchasing · {{ $purchaseOrder->checked_by ? 'Diperiksa' : 'Menunggu' }}</span>
-                                        <span class="approval-state {{ $purchaseOrder->approved_by ? 'done' : 'waiting' }}">Direktur · {{ $purchaseOrder->approved_by ? 'Disetujui' : 'Menunggu' }}</span>
+                                        <span class="approval-state {{ $purchaseOrder->ppic_reviewed_by || $purchaseOrder->approved_by ? 'done' : 'waiting' }}">PPIC · {{ $purchaseOrder->ppic_reviewed_by ? ($purchaseOrder->requires_main_director_approval ? 'Direview' : 'Disetujui delegasi') : ($purchaseOrder->approved_by ? 'Tidak tercatat (alur lama)' : 'Menunggu') }}</span>
+                                        @if ($purchaseOrder->requires_main_director_approval)
+                                            <span class="approval-state {{ $purchaseOrder->approved_by ? 'done' : 'waiting' }}">Direktur Utama · {{ $purchaseOrder->approved_by ? 'Disetujui' : 'Menunggu' }}</span>
+                                        @endif
                                     </div>
                                 </td>
                                 <td>

@@ -1968,6 +1968,7 @@ class ExampleTest extends TestCase
             'available_quantity' => 10,
             'lead_time_days' => 2,
             'is_selected' => true,
+            'selected_quantity' => 2,
             'selected_quantity' => 10,
         ]);
 
@@ -3086,7 +3087,7 @@ class ExampleTest extends TestCase
         $this->assertDatabaseHas('purchase_orders', [
             'purchase_request_id' => $purchaseRequest->id,
             'vendor_id' => $newVendor->id,
-            'number' => '002-R/AML-OR/'.now()->format('y'),
+            'number' => '002-R-2/AML-OR/'.now()->format('y'),
             'status' => 'draft',
         ]);
     }
@@ -3270,6 +3271,7 @@ class ExampleTest extends TestCase
             'available_quantity' => 10,
             'lead_time_days' => 4,
             'is_selected' => true,
+            'selected_quantity' => 2,
         ]);
         $requestItems[2]->quotations()->create([
             'vendor_id' => $vendors[0]->id,
@@ -3277,15 +3279,27 @@ class ExampleTest extends TestCase
             'available_quantity' => 10,
             'lead_time_days' => 3,
             'is_selected' => true,
+            'selected_quantity' => 2,
         ]);
 
         $this->actingAs($user)
             ->post(route('purchase-orders.store'), [
                 'ordered_at' => now()->toDateString(),
                 'notes' => 'PO dipisah berdasarkan vendor',
-                'selected_items' => [$requestItems[0]->id, $requestItems[1]->id],
+                'selected_items' => [$requestItems[0]->id],
                 'quotations' => [
                     $requestItems[0]->id => $quotationOne->id,
+                ],
+            ])
+            ->assertRedirect(route('purchase-orders'))
+            ->assertSessionHas('success');
+
+        $this->actingAs($user)
+            ->post(route('purchase-orders.store'), [
+                'ordered_at' => now()->toDateString(),
+                'notes' => 'PO vendor kedua',
+                'selected_items' => [$requestItems[1]->id],
+                'quotations' => [
                     $requestItems[1]->id => $quotationTwo->id,
                 ],
             ])
@@ -3303,12 +3317,14 @@ class ExampleTest extends TestCase
         $this->assertDatabaseHas('purchase_request_items', ['id' => $requestItems[0]->id, 'status' => 'po_created']);
         $this->assertDatabaseHas('purchase_request_items', ['id' => $requestItems[1]->id, 'status' => 'po_created']);
         $this->assertDatabaseHas('purchase_request_items', ['id' => $requestItems[2]->id, 'status' => 'vendor_selected']);
+        $this->assertDatabaseHas('purchase_requests', ['id' => $purchaseRequest->id, 'status' => 'vendor_selected']);
         $this->assertDatabaseHas('purchase_order_items', [
             'purchase_request_item_id' => $requestItems[0]->id,
             'brand_name' => 'Brand PO A',
             'part_number' => 'PO-A-001',
         ]);
         $this->assertDatabaseMissing('purchase_order_items', ['purchase_request_item_id' => $requestItems[2]->id]);
+
     }
 
     public function test_received_office_stock_can_be_dispatched_and_received_as_camp_stock(): void
@@ -3584,15 +3600,19 @@ class ExampleTest extends TestCase
                 'ordered_at' => now()->toDateString(),
                 'selected_quotations' => [$quotationOne->id],
             ])
-            ->assertSessionHasErrors('selected_quotations');
+            ->assertRedirect(route('purchase-orders'))
+            ->assertSessionHas('success');
 
-        $this->assertDatabaseMissing('purchase_orders', ['purchase_request_id' => $purchaseRequest->id]);
         $this->assertDatabaseHas('purchase_request_items', ['id' => $requestItem->id, 'status' => 'vendor_selected']);
+        $this->assertDatabaseHas('purchase_order_items', [
+            'purchase_request_item_id' => $requestItem->id,
+            'vendor_quotation_id' => $quotationOne->id,
+        ]);
 
         $this->actingAs($user)
             ->post(route('purchase-orders.store'), [
                 'ordered_at' => now()->toDateString(),
-                'selected_quotations' => [$quotationOne->id, $quotationTwo->id],
+                'selected_quotations' => [$quotationTwo->id],
             ])
             ->assertRedirect(route('purchase-orders'))
             ->assertSessionHas('success');

@@ -4,10 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Exports\OperationalReportExport;
 use App\Imports\MasterDataRowsImport;
+use App\Models\ActivityLog;
 use App\Models\Camp;
 use App\Models\CampStock;
-use App\Models\CampStockMovement;
-use App\Models\ActivityLog;
 use App\Models\Company;
 use App\Models\CreditNote;
 use App\Models\CreditNoteItem;
@@ -25,10 +24,10 @@ use App\Models\SiteDispatchItem;
 use App\Models\SiteReceipt;
 use App\Models\SiteReceiptItem;
 use App\Models\StockMovement;
-use App\Models\SystemNotification;
-use App\Models\SystemBackup;
 use App\Models\StockOpname;
 use App\Models\StockOpnameItem;
+use App\Models\SystemBackup;
+use App\Models\SystemNotification;
 use App\Models\Unit;
 use App\Models\UnitOfMeasure;
 use App\Models\UsageLog;
@@ -46,14 +45,14 @@ use App\Services\ReportService;
 use App\Services\StockService;
 use App\Services\SystemBackupService;
 use App\Support\WorkflowState;
-use Illuminate\Support\Carbon;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
-use Barryvdh\DomPDF\Facade\Pdf;
 use Maatwebsite\Excel\Facades\Excel;
 
 class InventoryWorkflowController extends Controller
@@ -424,17 +423,16 @@ class InventoryWorkflowController extends Controller
             'items' => fn ($query) => $query
                 ->where('status', 'vendor_selected')
                 ->where('procurement_approval_status', 'approved')
-                ->whereDoesntHave('purchaseOrderItems')
-                ->whereHas('selectedQuotations'),
+                ->whereHas('selectedQuotations', fn ($quotationQuery) => $quotationQuery->whereDoesntHave('purchaseOrderItem')),
             'items.unit',
             'items.inventoryItem',
+            'items.selectedQuotations' => fn ($query) => $query->whereDoesntHave('purchaseOrderItem'),
             'items.selectedQuotations.vendor',
         ])
             ->whereHas('items', fn ($query) => $query
                 ->where('status', 'vendor_selected')
                 ->where('procurement_approval_status', 'approved')
-                ->whereDoesntHave('purchaseOrderItems')
-                ->whereHas('selectedQuotations'))
+                ->whereHas('selectedQuotations', fn ($quotationQuery) => $quotationQuery->whereDoesntHave('purchaseOrderItem')))
             ->when((! $user?->isAdmin() || $activeCompanyId) && $visibleCampIds, fn ($query) => $query->whereIn('camp_id', $visibleCampIds))
             ->when((! $user?->isAdmin() || $activeCompanyId) && ! $visibleCampIds, fn ($query) => $query->whereRaw('1 = 0'))
             ->latest('requested_at')
@@ -486,6 +484,7 @@ class InventoryWorkflowController extends Controller
             'createdBy',
             'proposedBy',
             'checkedBy',
+            'ppicReviewedBy',
             'approvedBy',
             'rejectedBy',
             'submittedBy',
@@ -514,6 +513,7 @@ class InventoryWorkflowController extends Controller
             'createdBy',
             'proposedBy',
             'checkedBy',
+            'ppicReviewedBy',
             'approvedBy',
             'submittedBy',
             'issuedBy',
@@ -1048,8 +1048,12 @@ class InventoryWorkflowController extends Controller
         abort_unless(array_key_exists($reportType, $this->reportTypes()), 404);
         abort_unless(in_array($format, ['csv', 'xlsx', 'pdf'], true), 404);
 
-        if ($reportType === 'activity_logs') $this->ensurePermission('reports.activity_logs');
-        if ($reportType === 'stock_movements') $this->ensurePermission('reports.stock_movements');
+        if ($reportType === 'activity_logs') {
+            $this->ensurePermission('reports.activity_logs');
+        }
+        if ($reportType === 'stock_movements') {
+            $this->ensurePermission('reports.stock_movements');
+        }
 
         $report = $this->reportService->build($reportType, auth()->user(), $request->query(), false);
         $filename = 'report-'.str_replace('_', '-', $reportType).'-'.now()->format('Y-m-d');
@@ -1092,6 +1096,7 @@ class InventoryWorkflowController extends Controller
             return back()->with('success', 'Backup sistem berhasil dibuat.');
         } catch (\Throwable $exception) {
             report($exception);
+
             return back()->with('error', 'Backup gagal: '.$exception->getMessage());
         }
     }
@@ -1124,9 +1129,11 @@ class InventoryWorkflowController extends Controller
 
         try {
             $backup = $this->systemBackupService->import($data['backup_file'], auth()->user());
+
             return $this->performSystemRestore($request, $backup);
         } catch (\Throwable $exception) {
             report($exception);
+
             return back()->with('error', 'Restore gagal: '.$exception->getMessage());
         }
     }
@@ -1140,6 +1147,7 @@ class InventoryWorkflowController extends Controller
             return $this->performSystemRestore($request, $systemBackup);
         } catch (\Throwable $exception) {
             report($exception);
+
             return back()->with('error', 'Restore gagal: '.$exception->getMessage());
         }
     }
@@ -1242,6 +1250,7 @@ class InventoryWorkflowController extends Controller
             'items.quotations.vendor',
             'items.selectedQuotation.vendor',
             'items.selectedQuotations.vendor',
+            'items.selectedQuotations.purchaseOrderItem',
             'items.purchaseOrderItem.purchaseOrder',
             'items.purchaseOrderItems.purchaseOrder.vendor',
             'items.purchaseOrderItems.goodsReceiptItems.goodsReceipt',
@@ -1646,9 +1655,14 @@ class InventoryWorkflowController extends Controller
                         ->where('status', 'draft')
                         ->whereNotNull('proposed_by')
                         ->whereNull('checked_by'),
-                    'waiting_director' => $query
+                    'waiting_ppic' => $query
                         ->where('status', 'draft')
                         ->whereNotNull('checked_by')
+                        ->whereNull('ppic_reviewed_by'),
+                    'waiting_main_director', 'waiting_director' => $query
+                        ->where('status', 'draft')
+                        ->where('requires_main_director_approval', true)
+                        ->whereNotNull('ppic_reviewed_by')
                         ->whereNull('approved_by'),
                     default => $query->where('status', $status),
                 };
@@ -1815,7 +1829,7 @@ class InventoryWorkflowController extends Controller
 
     private function applyVendorPriceTabFilter($query, string $tab): void
     {
-        $activeStatuses = ['ready_for_quotation', 'vendor_selected', 'waiting_director'];
+        $activeStatuses = ['ready_for_quotation', 'vendor_selected'];
         $historyStatuses = ['po_created', 'po_issued', 'partial_received', 'goods_received', 'rejected'];
 
         if ($tab === 'history') {
@@ -1849,7 +1863,7 @@ class InventoryWorkflowController extends Controller
     {
         $itemIds = $purchaseRequest->items->pluck('id')->all();
         $logs = ActivityLog::with('user')
-            ->where('subject_type', (new PurchaseRequestItem())->getMorphClass())
+            ->where('subject_type', (new PurchaseRequestItem)->getMorphClass())
             ->whereIn('subject_id', $itemIds)
             ->whereIn('event', [
                 'approval.logistic.approved',
@@ -1921,7 +1935,7 @@ class InventoryWorkflowController extends Controller
                 })
                     ->orWhere(function ($itemQuery) use ($purchaseRequest) {
                         $itemQuery
-                            ->where('subject_type', (new PurchaseRequestItem())->getMorphClass())
+                            ->where('subject_type', (new PurchaseRequestItem)->getMorphClass())
                             ->whereIn('subject_id', $purchaseRequest->items->pluck('id'));
                     });
             })
@@ -1966,7 +1980,7 @@ class InventoryWorkflowController extends Controller
                     })
                     ->orWhere(function ($itemQuery) use ($requestItemIds) {
                         $itemQuery
-                            ->where('subject_type', (new PurchaseRequestItem())->getMorphClass())
+                            ->where('subject_type', (new PurchaseRequestItem)->getMorphClass())
                             ->whereIn('subject_id', $requestItemIds);
                     });
             })
@@ -1985,7 +1999,7 @@ class InventoryWorkflowController extends Controller
                 })
                     ->orWhere(function ($itemQuery) use ($creditNote) {
                         $itemQuery
-                            ->where('subject_type', (new CreditNoteItem())->getMorphClass())
+                            ->where('subject_type', (new CreditNoteItem)->getMorphClass())
                             ->whereIn('subject_id', $creditNote->items->pluck('id'));
                     });
             })
@@ -2839,6 +2853,7 @@ class InventoryWorkflowController extends Controller
 
                 if (! empty($item['id'])) {
                     $purchaseRequest->items()->whereKey($item['id'])->update($payload);
+
                     continue;
                 }
 
@@ -3029,51 +3044,6 @@ class InventoryWorkflowController extends Controller
         return back()->with('success', 'Detail order request direject Manager Camp.');
     }
 
-    public function approveItemDirector(PurchaseRequestItem $purchaseRequestItem)
-    {
-        $this->ensureCanApproveDirector();
-        $this->ensureCanAccessPurchaseRequestItem($purchaseRequestItem);
-
-        $purchaseRequestItem = $this->transitionRequestItemWithLock($purchaseRequestItem, function ($item) {
-            if ($item->status !== 'waiting_director' || $item->director_approval_status !== 'pending') {
-                return false;
-            }
-
-            $item->update([
-                'status' => 'vendor_selected',
-                'director_approval_status' => 'approved',
-                'director_approved_at' => now(),
-                'rejection_note' => null,
-            ]);
-
-            return true;
-        });
-
-        if (! $purchaseRequestItem) {
-            return back()->with('error', 'Detail barang ini belum memerlukan approval direktur.');
-        }
-        AuditLogger::log('approval.director.approved', 'Detail barang di-approve direktur.', $purchaseRequestItem);
-
-        return back()->with('success', 'Detail barang di-approve direktur.');
-    }
-
-    public function rejectItemDirector(Request $request, PurchaseRequestItem $purchaseRequestItem)
-    {
-        $this->ensureCanApproveDirector();
-        $this->ensureCanAccessPurchaseRequestItem($purchaseRequestItem);
-
-        if ($purchaseRequestItem->status !== 'waiting_director') {
-            return back()->with('error', 'Detail barang ini tidak bisa direject direktur.');
-        }
-
-        if (! $this->rejectPurchaseRequestItem($request, $purchaseRequestItem, 'director')) {
-            return back()->with('error', 'Detail barang ini sudah diproses oleh pengguna lain.');
-        }
-        AuditLogger::log('approval.director.rejected', 'Detail barang direject direktur.', $purchaseRequestItem);
-
-        return back()->with('success', 'Detail barang direject direktur.');
-    }
-
     public function bulkApproveRequestItems(Request $request, PurchaseRequest $purchaseRequest)
     {
         $this->ensurePermission('approvals.view');
@@ -3116,12 +3086,12 @@ class InventoryWorkflowController extends Controller
             return back()->with('error', 'Tidak ada item checklist yang siap di-approve oleh role Anda.');
         }
 
-        AuditLogger::log('approval.bulk_approved', $approvedCount . ' detail barang di-approve melalui checklist.', $purchaseRequest, [
+        AuditLogger::log('approval.bulk_approved', $approvedCount.' detail barang di-approve melalui checklist.', $purchaseRequest, [
             'approved_count' => $approvedCount,
             'selected_item_ids' => array_values($data['request_item_ids']),
         ]);
 
-        return back()->with('success', $approvedCount . ' detail barang berhasil di-approve.');
+        return back()->with('success', $approvedCount.' detail barang berhasil di-approve.');
     }
 
     public function storeQuotation(Request $request, PurchaseRequestItem $purchaseRequestItem)
@@ -3136,7 +3106,7 @@ class InventoryWorkflowController extends Controller
 
         $purchaseRequest = $purchaseRequestItem->purchaseRequest;
 
-        if (! in_array($purchaseRequestItem->status, ['ready_for_quotation', 'vendor_selected', 'waiting_director'], true)
+        if (! in_array($purchaseRequestItem->status, ['ready_for_quotation', 'vendor_selected'], true)
             || $purchaseRequestItem->manager_camp_approval_status !== 'approved'
             || ! in_array($purchaseRequestItem->procurement_approval_status, ['draft', 'not_required'], true)) {
             return back()->with('error', 'Harga vendor baru bisa diinput setelah Order Request diketahui Manager Camp.');
@@ -3193,7 +3163,7 @@ class InventoryWorkflowController extends Controller
                 ->findOrFail($purchaseRequestItem->id);
 
             if ($this->vendorPricingHasPurchaseOrder($lockedItem)
-                || ! in_array($lockedItem->status, ['ready_for_quotation', 'vendor_selected', 'waiting_director'], true)
+                || ! in_array($lockedItem->status, ['ready_for_quotation', 'vendor_selected'], true)
                 || $lockedItem->manager_camp_approval_status !== 'approved'
                 || ! in_array($lockedItem->procurement_approval_status, ['draft', 'not_required'], true)) {
                 return null;
@@ -3245,7 +3215,7 @@ class InventoryWorkflowController extends Controller
             return back()->with('error', 'Vendor tidak dapat diubah karena item sudah masuk Purchase Order.');
         }
 
-        if (! in_array($purchaseRequestItem->status, ['ready_for_quotation', 'vendor_selected', 'waiting_director'], true)
+        if (! in_array($purchaseRequestItem->status, ['ready_for_quotation', 'vendor_selected'], true)
             || $purchaseRequestItem->manager_camp_approval_status !== 'approved'
             || ! in_array($purchaseRequestItem->procurement_approval_status, ['draft', 'not_required'], true)) {
             return back()->with('error', 'Vendor hanya bisa dipilih setelah Order Request diketahui Manager Camp.');
@@ -3263,7 +3233,7 @@ class InventoryWorkflowController extends Controller
 
             if ((int) $lockedQuotation->purchase_request_item_id !== (int) $lockedItem->id
                 || $this->vendorPricingHasPurchaseOrder($lockedItem)
-                || ! in_array($lockedItem->status, ['ready_for_quotation', 'vendor_selected', 'waiting_director'], true)
+                || ! in_array($lockedItem->status, ['ready_for_quotation', 'vendor_selected'], true)
                 || $lockedItem->manager_camp_approval_status !== 'approved'
                 || ! in_array($lockedItem->procurement_approval_status, ['draft', 'not_required'], true)
                 || $lockedQuotation->available_quantity <= 0) {
@@ -3275,12 +3245,11 @@ class InventoryWorkflowController extends Controller
             $lockedQuotation->update(['is_selected' => true, 'selected_quantity' => $selectedQuantity]);
 
             $finalTotal = $lockedQuotation->totalIdr($selectedQuantity);
-            $requiresDirectorApproval = $finalTotal > 10000000;
 
             $lockedItem->update([
                 'final_total' => $finalTotal,
-                'status' => $requiresDirectorApproval ? 'waiting_director' : 'vendor_selected',
-                'director_approval_status' => $requiresDirectorApproval ? 'pending' : 'not_required',
+                'status' => 'vendor_selected',
+                'director_approval_status' => 'not_required',
                 'director_approved_at' => null,
                 'procurement_approval_status' => 'draft',
                 'procurement_created_by_name' => null,
@@ -3310,7 +3279,7 @@ class InventoryWorkflowController extends Controller
             'unit_price' => $vendorQuotation->unit_price,
         ]);
 
-        return back()->with('success', 'Vendor final dipilih: ' . $vendorQuotation->vendor->name . '.');
+        return back()->with('success', 'Vendor final dipilih: '.$vendorQuotation->vendor->name.'.');
     }
 
     public function updateVendorAllocation(Request $request, PurchaseRequestItem $purchaseRequestItem)
@@ -3328,7 +3297,7 @@ class InventoryWorkflowController extends Controller
             return back()->with('error', 'Alokasi vendor tidak dapat diubah karena item sudah masuk Purchase Order.');
         }
 
-        if (! in_array($purchaseRequestItem->status, ['ready_for_quotation', 'vendor_selected', 'waiting_director'], true)
+        if (! in_array($purchaseRequestItem->status, ['ready_for_quotation', 'vendor_selected'], true)
             || $purchaseRequestItem->manager_camp_approval_status !== 'approved'
             || (! $isApprovalReview && ! in_array($purchaseRequestItem->procurement_approval_status, ['draft', 'not_required'], true))) {
             return back()->with('error', 'Vendor hanya bisa dipilih setelah Order Request diketahui Manager Camp.');
@@ -3353,7 +3322,7 @@ class InventoryWorkflowController extends Controller
             $isApprovalReview = $isEquipmentReview || $isDirectorReview;
 
             if ($this->vendorPricingHasPurchaseOrder($lockedItem)
-                || ! in_array($lockedItem->status, ['ready_for_quotation', 'vendor_selected', 'waiting_director'], true)
+                || ! in_array($lockedItem->status, ['ready_for_quotation', 'vendor_selected'], true)
                 || $lockedItem->manager_camp_approval_status !== 'approved'
                 || (! $isApprovalReview && ! in_array($lockedItem->procurement_approval_status, ['draft', 'not_required'], true))) {
                 return null;
@@ -3369,12 +3338,10 @@ class InventoryWorkflowController extends Controller
                 return $lockedItem->refresh();
             }
 
-            $requiresDirectorApproval = $finalTotal > 10000000;
-
             $lockedItem->update([
                 'final_total' => $finalTotal,
-                'status' => $requiresDirectorApproval ? 'waiting_director' : 'vendor_selected',
-                'director_approval_status' => $requiresDirectorApproval ? 'pending' : 'not_required',
+                'status' => 'vendor_selected',
+                'director_approval_status' => 'not_required',
                 'director_approved_at' => null,
                 'procurement_approval_status' => 'draft',
                 'procurement_created_by_name' => null,
@@ -3402,8 +3369,8 @@ class InventoryWorkflowController extends Controller
         AuditLogger::log('quotation.allocated', $isApprovalReview
             ? 'Pilihan vendor diperbarui oleh '.$reviewerLabel.'.'
             : 'Vendor final dialokasikan ke beberapa vendor.', $purchaseRequestItem, [
-            'allocations' => $allocations->all(),
-        ]);
+                'allocations' => $allocations->all(),
+            ]);
 
         return back()->with('success', $isApprovalReview
             ? 'Pilihan vendor disimpan. Silakan lanjutkan persetujuan '.$reviewerLabel.'.'
@@ -3708,7 +3675,7 @@ class InventoryWorkflowController extends Controller
             $selectedQuotationIds = collect($data['selected_quotations'] ?? [])->filter()->map(fn ($id) => (int) $id)->values();
             if ($selectedQuotationIds->isNotEmpty()) {
                 $quotations = VendorQuotation::query()
-                    ->with(['requestItem.purchaseRequest.camp', 'requestItem.inventoryItem', 'requestItem.purchaseOrderItems', 'vendor'])
+                    ->with(['requestItem.purchaseRequest.camp', 'requestItem.inventoryItem', 'requestItem.purchaseOrderItems', 'vendor', 'purchaseOrderItem'])
                     ->whereIn('id', $selectedQuotationIds)
                     ->lockForUpdate()
                     ->get()
@@ -3718,32 +3685,43 @@ class InventoryWorkflowController extends Controller
                     throw ValidationException::withMessages(['selected_quotations' => 'Sebagian alokasi vendor tidak ditemukan.']);
                 }
 
+                $selectedPoGroups = $quotations->map(fn (VendorQuotation $quotation) => implode(':', [
+                    $quotation->requestItem->purchase_request_id,
+                    $quotation->vendor_id,
+                    $quotation->currency_code,
+                ]))->unique();
+                if ($selectedPoGroups->count() !== 1) {
+                    throw ValidationException::withMessages([
+                        'selected_quotations' => 'Satu proses hanya dapat membuat satu PO. Pilih alokasi dari OR, vendor, dan mata uang yang sama.',
+                    ]);
+                }
+
                 $preparedItems = $selectedQuotationIds->map(function ($quotationId) use ($quotations, $data) {
                     $quotation = $quotations->get($quotationId);
                     $requestItem = $quotation->requestItem;
 
-                    if ($requestItem->status !== 'vendor_selected' || $requestItem->purchaseOrderItems->isNotEmpty()) {
+                    if ($requestItem->status !== 'vendor_selected' || $quotation->purchaseOrderItem) {
                         throw ValidationException::withMessages([
-                            'selected_quotations' => $requestItem->inventoryItem->name . ' sudah masuk PO atau belum siap dibuatkan PO.',
+                            'selected_quotations' => 'Alokasi '.$requestItem->inventoryItem->name.' sudah masuk PO atau belum siap dibuatkan PO.',
                         ]);
                     }
 
                     if ($requestItem->procurement_approval_status !== 'approved') {
                         throw ValidationException::withMessages([
-                            'selected_quotations' => 'Permintaan pengadaan barang ' . $requestItem->inventoryItem->name . ' belum disetujui direktur.',
+                            'selected_quotations' => 'Permintaan pengadaan barang '.$requestItem->inventoryItem->name.' belum disetujui direktur.',
                         ]);
                     }
 
                     if (! auth()->user()?->loadMissing('role')->canAccessCamp($requestItem->purchaseRequest->camp_id, $requestItem->purchaseRequest->camp?->company_id)) {
                         throw ValidationException::withMessages([
-                            'selected_quotations' => $requestItem->inventoryItem->name . ' berada di luar akses data role Anda.',
+                            'selected_quotations' => $requestItem->inventoryItem->name.' berada di luar akses data role Anda.',
                         ]);
                     }
 
                     $quantity = (int) $quotation->selected_quantity;
                     if (! $quotation->is_selected || $quantity <= 0 || $quantity > $quotation->available_quantity || (float) $quotation->unit_price <= 0) {
                         throw ValidationException::withMessages([
-                            'selected_quotations' => 'Alokasi vendor final untuk ' . $requestItem->inventoryItem->name . ' belum valid atau stoknya tidak mencukupi.',
+                            'selected_quotations' => 'Alokasi vendor final untuk '.$requestItem->inventoryItem->name.' belum valid atau stoknya tidak mencukupi.',
                         ]);
                     }
 
@@ -3753,96 +3731,88 @@ class InventoryWorkflowController extends Controller
                     return compact('requestItem', 'quotation', 'itemTotal', 'quantity', 'unitPrice');
                 });
 
-                $preparedItems->groupBy(fn ($item) => $item['requestItem']->id)->each(function ($itemAllocations) {
-                    $requestItem = $itemAllocations->first()['requestItem'];
-                    $chosenQuotationIds = $itemAllocations->pluck('quotation.id')->map(fn ($id) => (int) $id)->sort()->values();
-                    $finalAllocations = $requestItem->selectedQuotations()->lockForUpdate()->get();
-                    $finalQuotationIds = $finalAllocations->pluck('id')->map(fn ($id) => (int) $id)->sort()->values();
-                    $allocatedQuantity = (int) $finalAllocations->sum('selected_quantity');
-
-                    if ($chosenQuotationIds->all() !== $finalQuotationIds->all() || $allocatedQuantity !== $requestItem->approvedQuantity()) {
-                        throw ValidationException::withMessages([
-                            'selected_quotations' => 'Seluruh alokasi vendor untuk '.$requestItem->inventoryItem->name.' harus dibuatkan PO bersamaan.',
-                        ]);
-                    }
-                });
             } else {
                 if (empty($data['selected_items'])) {
                     throw ValidationException::withMessages(['selected_items' => 'Pilih minimal satu barang untuk dibuatkan PO.']);
                 }
 
-            $items = PurchaseRequestItem::query()
-                ->with(['purchaseRequest.camp', 'inventoryItem', 'purchaseOrderItems', 'quotations.vendor', 'selectedQuotation'])
-                ->whereIn('id', $data['selected_items'])
-                ->lockForUpdate()
-                ->get()
-                ->keyBy('id');
+                $items = PurchaseRequestItem::query()
+                    ->with(['purchaseRequest.camp', 'inventoryItem', 'purchaseOrderItems', 'quotations.vendor', 'selectedQuotation'])
+                    ->whereIn('id', $data['selected_items'])
+                    ->lockForUpdate()
+                    ->get()
+                    ->keyBy('id');
 
-            if ($items->count() !== count($data['selected_items'])) {
-                throw ValidationException::withMessages(['selected_items' => 'Sebagian barang tidak ditemukan.']);
+                if ($items->count() !== count($data['selected_items'])) {
+                    throw ValidationException::withMessages(['selected_items' => 'Sebagian barang tidak ditemukan.']);
+                }
+
+                $preparedItems = collect($data['selected_items'])->map(function ($itemId) use ($items, $data) {
+                    $requestItem = $items->get((int) $itemId);
+
+                    if ($requestItem->status !== 'vendor_selected' || $requestItem->purchaseOrderItems->isNotEmpty()) {
+                        throw ValidationException::withMessages([
+                            'selected_items' => $requestItem->inventoryItem->name.' sudah masuk PO atau belum siap dibuatkan PO.',
+                        ]);
+                    }
+
+                    if ($requestItem->procurement_approval_status !== 'approved') {
+                        throw ValidationException::withMessages([
+                            'selected_items' => 'Permintaan pengadaan barang '.$requestItem->inventoryItem->name.' belum disetujui direktur.',
+                        ]);
+                    }
+
+                    if (! auth()->user()?->loadMissing('role')->canAccessCamp($requestItem->purchaseRequest->camp_id, $requestItem->purchaseRequest->camp?->company_id)) {
+                        throw ValidationException::withMessages([
+                            'selected_items' => $requestItem->inventoryItem->name.' berada di luar akses data role Anda.',
+                        ]);
+                    }
+
+                    $quotationId = (int) ($data['quotations'][$requestItem->id] ?? $requestItem->selectedQuotation?->id ?? 0);
+                    $quotation = $requestItem->quotations->firstWhere('id', $quotationId);
+                    $splitAllocationCount = $requestItem->selectedQuotations()->count();
+
+                    if ($splitAllocationCount > 1) {
+                        throw ValidationException::withMessages([
+                            'selected_items' => $requestItem->inventoryItem->name.' memiliki beberapa alokasi vendor. Gunakan seluruh alokasi final saat membuat PO.',
+                        ]);
+                    }
+
+                    if (! $quotation
+                        || ! $quotation->is_selected
+                        || (float) $quotation->unit_price <= 0
+                        || $quotation->available_quantity < $requestItem->approvedQuantity()
+                        || ((int) $quotation->selected_quantity > 0 && (int) $quotation->selected_quantity !== $requestItem->approvedQuantity())) {
+                        throw ValidationException::withMessages([
+                            'quotations' => 'Vendor final untuk '.$requestItem->inventoryItem->name.' belum valid atau stoknya tidak mencukupi.',
+                        ]);
+                    }
+
+                    $quantity = (int) ($quotation->selected_quantity ?: $requestItem->approvedQuantity());
+                    $unitPrice = (float) ($data['unit_prices'][$quotation->id] ?? $quotation->unit_price);
+                    $itemTotal = $unitPrice * $quantity;
+
+                    return compact('requestItem', 'quotation', 'itemTotal', 'quantity', 'unitPrice');
+                });
             }
 
-            $preparedItems = collect($data['selected_items'])->map(function ($itemId) use ($items, $data) {
-                $requestItem = $items->get((int) $itemId);
-
-                if ($requestItem->status !== 'vendor_selected' || $requestItem->purchaseOrderItems->isNotEmpty()) {
-                    throw ValidationException::withMessages([
-                        'selected_items' => $requestItem->inventoryItem->name . ' sudah masuk PO atau belum siap dibuatkan PO.',
-                    ]);
-                }
-
-                if ($requestItem->procurement_approval_status !== 'approved') {
-                    throw ValidationException::withMessages([
-                        'selected_items' => 'Permintaan pengadaan barang ' . $requestItem->inventoryItem->name . ' belum disetujui direktur.',
-                    ]);
-                }
-
-                if (! auth()->user()?->loadMissing('role')->canAccessCamp($requestItem->purchaseRequest->camp_id, $requestItem->purchaseRequest->camp?->company_id)) {
-                    throw ValidationException::withMessages([
-                        'selected_items' => $requestItem->inventoryItem->name . ' berada di luar akses data role Anda.',
-                    ]);
-                }
-
-                $quotationId = (int) ($data['quotations'][$requestItem->id] ?? $requestItem->selectedQuotation?->id ?? 0);
-                $quotation = $requestItem->quotations->firstWhere('id', $quotationId);
-                $splitAllocationCount = $requestItem->selectedQuotations()->count();
-
-                if ($splitAllocationCount > 1) {
-                    throw ValidationException::withMessages([
-                        'selected_items' => $requestItem->inventoryItem->name.' memiliki beberapa alokasi vendor. Gunakan seluruh alokasi final saat membuat PO.',
-                    ]);
-                }
-
-                if (! $quotation
-                    || ! $quotation->is_selected
-                    || (float) $quotation->unit_price <= 0
-                    || $quotation->available_quantity < $requestItem->approvedQuantity()
-                    || ((int) $quotation->selected_quantity > 0 && (int) $quotation->selected_quantity !== $requestItem->approvedQuantity())) {
-                    throw ValidationException::withMessages([
-                        'quotations' => 'Vendor final untuk ' . $requestItem->inventoryItem->name . ' belum valid atau stoknya tidak mencukupi.',
-                    ]);
-                }
-
-                $quantity = (int) ($quotation->selected_quantity ?: $requestItem->approvedQuantity());
-                $unitPrice = (float) ($data['unit_prices'][$quotation->id] ?? $quotation->unit_price);
-                $itemTotal = $unitPrice * $quantity;
-                if ($itemTotal > 10000000 && $requestItem->director_approval_status !== 'approved') {
-                    throw ValidationException::withMessages([
-                        'quotations' => $requestItem->inventoryItem->name . ' memerlukan approval direktur untuk vendor yang dipilih.',
-                    ]);
-                }
-
-                return compact('requestItem', 'quotation', 'itemTotal', 'quantity', 'unitPrice');
-            });
+            $preparedPoGroups = $preparedItems->map(fn ($item) => implode(':', [
+                $item['requestItem']->purchase_request_id,
+                $item['quotation']->vendor_id,
+                $item['quotation']->currency_code,
+            ]))->unique();
+            if ($preparedPoGroups->count() !== 1) {
+                throw ValidationException::withMessages([
+                    $selectedQuotationIds->isNotEmpty() ? 'selected_quotations' : 'selected_items' => 'Satu proses hanya dapat membuat satu PO. Pilih barang dari OR, vendor, dan mata uang yang sama.',
+                ]);
             }
 
             $groupedItems = $preparedItems
-                ->groupBy(fn ($item) => $item['requestItem']->purchase_request_id . ':' . $item['quotation']->vendor_id . ':' . $item['quotation']->currency_code)
+                ->groupBy(fn ($item) => $item['requestItem']->purchase_request_id.':'.$item['quotation']->vendor_id.':'.$item['quotation']->currency_code)
                 ->values();
-            $vendorGroupCounts = $groupedItems->countBy(fn ($items) => $items->first()['requestItem']->purchase_request_id);
 
             return $groupedItems
-                ->map(function ($items) use ($data, $vendorGroupCounts, $isPosting) {
+                ->map(function ($items) use ($data, $isPosting) {
                     $firstItem = $items->first();
                     $purchaseRequest = $firstItem['requestItem']->purchaseRequest;
                     $vendorId = $firstItem['quotation']->vendor_id;
@@ -3857,7 +3827,7 @@ class InventoryWorkflowController extends Controller
                         ->lockForUpdate()
                         ->count();
                     $vendorSequence = $existingPoCount + 1;
-                    $hasMultipleVendors = $vendorGroupCounts->get($purchaseRequest->id, 0) > 1;
+                    $hasMultipleVendors = $this->purchaseRequestHasMultiplePurchaseOrderGroups($purchaseRequest);
                     $shouldUseVendorSuffix = $hasMultipleVendors || (! $isRetryPurchaseOrder && $existingPoCount > 0);
                     $purchaseOrderNumber = DocumentNumberService::purchaseOrderNumber(
                         $purchaseRequest->number,
@@ -3903,6 +3873,7 @@ class InventoryWorkflowController extends Controller
                         $quotation = $item['quotation'];
                         $purchaseOrder->items()->create([
                             'purchase_request_item_id' => $requestItem->id,
+                            'vendor_quotation_id' => $quotation->id,
                             'inventory_item_id' => $requestItem->inventory_item_id,
                             'description' => $requestItem->inventoryItem->name,
                             'brand_name' => $quotation->brand_name,
@@ -3915,22 +3886,28 @@ class InventoryWorkflowController extends Controller
                             'total' => $item['itemTotal'],
                         ]);
 
-                        $requestItem->update(['status' => 'po_created']);
                         $subtotal += $item['itemTotal'];
                     }
+
+                    $items->pluck('requestItem')->unique('id')->each(function (PurchaseRequestItem $requestItem) {
+                        $hasPendingAllocation = $requestItem->selectedQuotations()
+                            ->whereDoesntHave('purchaseOrderItem')
+                            ->exists();
+                        $requestItem->update(['status' => $hasPendingAllocation ? 'vendor_selected' : 'po_created']);
+                    });
 
                     $purchaseOrder->update($this->calculatePurchaseOrderTotals(
                         $subtotal,
                         (float) ($data['discount_percent'] ?? 0),
                         (float) ($data['ppn_percent'] ?? 0)
                     ));
-                    $purchaseRequest->update(['status' => 'po_created']);
+                    $this->syncPurchaseRequestAfterPurchaseOrderDraftChange($purchaseRequest->fresh('items'));
 
                     return $purchaseOrder;
                 });
         });
 
-        AuditLogger::log('purchase_order.created', $purchaseOrders->count() . ' purchase order dibuat dari pilihan barang dan vendor.', null, [
+        AuditLogger::log('purchase_order.created', $purchaseOrders->count().' purchase order dibuat dari pilihan barang dan vendor.', null, [
             'purchase_order_ids' => $purchaseOrders->pluck('id')->values()->all(),
             'selected_item_count' => count($data['selected_items'] ?? $data['selected_quotations'] ?? []),
         ]);
@@ -4010,8 +3987,12 @@ class InventoryWorkflowController extends Controller
                 'actual_exchange_rate_date' => $data['actual_exchange_rate_date'] ?? $purchaseOrder->actual_exchange_rate_date,
                 'checked_by' => null,
                 'checked_at' => null,
+                'ppic_reviewed_by' => null,
+                'ppic_reviewed_at' => null,
                 'approved_by' => null,
                 'approved_at' => null,
+                'approval_amount_idr' => null,
+                'requires_main_director_approval' => false,
             ], $this->calculatePurchaseOrderTotals(
                 $subtotal,
                 (float) ($data['discount_percent'] ?? 0),
@@ -4072,11 +4053,17 @@ class InventoryWorkflowController extends Controller
             }
 
             $this->validatePurchaseOrderIntegrity($lockedPurchaseOrder);
+            $approvalAmountIdr = $this->purchaseOrderApprovalAmountIdr($lockedPurchaseOrder);
+            $requiresMainDirector = $approvalAmountIdr > $this->purchaseOrderDirectorThresholdIdr();
             $lockedPurchaseOrder->update([
                 'checked_by' => auth()->id(),
                 'checked_at' => now(),
+                'ppic_reviewed_by' => null,
+                'ppic_reviewed_at' => null,
                 'approved_by' => null,
                 'approved_at' => null,
+                'approval_amount_idr' => $approvalAmountIdr,
+                'requires_main_director_approval' => $requiresMainDirector,
             ]);
 
             return $lockedPurchaseOrder->refresh();
@@ -4088,12 +4075,58 @@ class InventoryWorkflowController extends Controller
 
         AuditLogger::log('purchase_order.checked', 'Purchase order diperiksa Kepala Divisi Purchasing.', $purchaseOrder);
 
-        return back()->with('success', 'PO diperiksa dan diteruskan ke Direktur.');
+        return back()->with('success', 'PO diperiksa dan diteruskan ke PPIC untuk review jalur persetujuan.');
+    }
+
+    public function reviewPurchaseOrderByPpic(PurchaseOrder $purchaseOrder)
+    {
+        $this->ensurePermission('purchase_orders.ppic_review');
+        $purchaseOrder->loadMissing('purchaseRequest.camp');
+        $this->ensureCanAccessCamp($purchaseOrder->purchaseRequest->camp);
+
+        $result = DB::transaction(function () use ($purchaseOrder) {
+            $lockedPurchaseOrder = PurchaseOrder::lockForUpdate()->findOrFail($purchaseOrder->id);
+            if ($lockedPurchaseOrder->status !== 'draft'
+                || ! $lockedPurchaseOrder->checked_by
+                || $lockedPurchaseOrder->ppic_reviewed_by
+                || $lockedPurchaseOrder->approved_by) {
+                return null;
+            }
+
+            $this->validatePurchaseOrderIntegrity($lockedPurchaseOrder);
+            $isDelegatedApproval = ! $lockedPurchaseOrder->requires_main_director_approval;
+            $lockedPurchaseOrder->update([
+                'ppic_reviewed_by' => auth()->id(),
+                'ppic_reviewed_at' => now(),
+                'approved_by' => $isDelegatedApproval ? auth()->id() : null,
+                'approved_at' => $isDelegatedApproval ? now() : null,
+            ]);
+
+            return [$lockedPurchaseOrder->refresh(), $isDelegatedApproval];
+        });
+
+        if (! $result) {
+            return back()->with('error', 'PO belum diperiksa Kepala Purchasing atau sudah direview pengguna lain.');
+        }
+
+        [$purchaseOrder, $isDelegatedApproval] = $result;
+        if ($isDelegatedApproval) {
+            AuditLogger::log('purchase_order.approved_delegated', 'Purchase order disetujui PPIC berdasarkan delegasi sampai Rp10 juta.', $purchaseOrder);
+
+            return back()->with('success', 'PO disetujui PPIC berdasarkan delegasi dan siap diterbitkan.');
+        }
+
+        AuditLogger::log('purchase_order.ppic_reviewed', 'Purchase order di atas Rp10 juta telah direview PPIC dan diteruskan ke Direktur Utama.', $purchaseOrder);
+
+        return back()->with('success', 'Review PPIC selesai. PO diteruskan ke Haryanto sebagai Direktur Utama.');
     }
 
     public function approvePurchaseOrder(PurchaseOrder $purchaseOrder)
     {
         $this->ensurePermission('purchase_orders.approve');
+        if (! $this->isMainDirector(auth()->user())) {
+            return back()->with('error', 'Persetujuan PO di atas Rp10 juta hanya dapat dilakukan oleh akun Direktur Utama yang ditetapkan.');
+        }
         $purchaseOrder->loadMissing('purchaseRequest.camp');
         $this->ensureCanAccessCamp($purchaseOrder->purchaseRequest->camp);
 
@@ -4101,6 +4134,8 @@ class InventoryWorkflowController extends Controller
             $lockedPurchaseOrder = PurchaseOrder::lockForUpdate()->findOrFail($purchaseOrder->id);
             if ($lockedPurchaseOrder->status !== 'draft'
                 || ! $lockedPurchaseOrder->checked_by
+                || ! $lockedPurchaseOrder->requires_main_director_approval
+                || ! $lockedPurchaseOrder->ppic_reviewed_by
                 || $lockedPurchaseOrder->approved_by) {
                 return null;
             }
@@ -4115,12 +4150,12 @@ class InventoryWorkflowController extends Controller
         });
 
         if (! $purchaseOrder) {
-            return back()->with('error', 'PO belum diperiksa atau sudah disetujui pengguna lain.');
+            return back()->with('error', 'PO belum selesai direview PPIC, tidak memerlukan Direktur Utama, atau sudah disetujui pengguna lain.');
         }
 
-        AuditLogger::log('purchase_order.approved', 'Purchase order disetujui Direktur.', $purchaseOrder);
+        AuditLogger::log('purchase_order.approved', 'Purchase order di atas Rp10 juta disetujui Haryanto sebagai Direktur Utama.', $purchaseOrder);
 
-        return back()->with('success', 'PO disetujui Direktur dan siap diterbitkan.');
+        return back()->with('success', 'PO disetujui Direktur Utama dan siap diterbitkan.');
     }
 
     public function rejectPurchaseOrder(Request $request, PurchaseOrder $purchaseOrder)
@@ -4145,8 +4180,12 @@ class InventoryWorkflowController extends Controller
                 'proposed_at' => null,
                 'checked_by' => null,
                 'checked_at' => null,
+                'ppic_reviewed_by' => null,
+                'ppic_reviewed_at' => null,
                 'approved_by' => null,
                 'approved_at' => null,
+                'approval_amount_idr' => null,
+                'requires_main_director_approval' => false,
                 'rejected_by' => $user->id,
                 'rejected_at' => now(),
                 'rejection_stage' => $stage,
@@ -4162,7 +4201,11 @@ class InventoryWorkflowController extends Controller
 
         [$purchaseOrder, $stage] = $result;
 
-        $stageLabel = $stage === 'director' ? 'Direktur' : 'Kepala Divisi Purchasing';
+        $stageLabel = match ($stage) {
+            'main_director' => 'Direktur Utama',
+            'ppic' => 'PPIC',
+            default => 'Kepala Divisi Purchasing',
+        };
 
         AuditLogger::log('purchase_order.returned', 'Purchase order dikembalikan untuk revisi oleh '.$stageLabel.': '.$data['rejection_note'], $purchaseOrder, [
             'stage' => $stage,
@@ -4211,7 +4254,11 @@ class InventoryWorkflowController extends Controller
 
         [$purchaseOrder, $stage] = $result;
 
-        $stageLabel = $stage === 'director' ? 'Direktur' : 'Kepala Divisi Purchasing';
+        $stageLabel = match ($stage) {
+            'main_director' => 'Direktur Utama',
+            'ppic' => 'PPIC',
+            default => 'Kepala Divisi Purchasing',
+        };
 
         AuditLogger::log('purchase_order.rejected', 'Purchase order ditolak oleh '.$stageLabel.': '.$data['rejection_note'], $purchaseOrder, [
             'stage' => $stage,
@@ -4235,7 +4282,7 @@ class InventoryWorkflowController extends Controller
         }
 
         if (! $purchaseOrder->approved_by) {
-            return back()->with('error', 'PO harus disetujui Direktur sebelum di-launch.');
+            return back()->with('error', 'PO harus menyelesaikan persetujuan final sebelum di-launch.');
         }
 
         $this->validatePurchaseOrderIntegrity($purchaseOrder);
@@ -4262,7 +4309,7 @@ class InventoryWorkflowController extends Controller
         }
 
         if (! $purchaseOrder->approved_by) {
-            return back()->with('error', 'PO harus disetujui Direktur sebelum diajukan final.');
+            return back()->with('error', 'PO harus menyelesaikan persetujuan final sebelum diajukan final.');
         }
 
         $this->validatePurchaseOrderIntegrity($purchaseOrder);
@@ -4383,7 +4430,7 @@ class InventoryWorkflowController extends Controller
 
                 if ($quantityReceived > $remaining) {
                     throw ValidationException::withMessages([
-                        'items' => 'Qty terima ' . $purchaseOrderItem->inventoryItem->name . ' melebihi sisa PO.',
+                        'items' => 'Qty terima '.$purchaseOrderItem->inventoryItem->name.' melebihi sisa PO.',
                     ]);
                 }
 
@@ -4406,7 +4453,7 @@ class InventoryWorkflowController extends Controller
                 ]);
 
                 if (in_array($item['condition'], ['good', 'quantity_short'], true) && $quantityReceived > 0) {
-                    StockService::increase($purchaseOrderItem->inventory_item_id, $quantityReceived, 'goods_receipt', $receiptItem, 'Penerimaan gudang ' . $receipt->number . ' faktur ' . $receipt->invoice_number);
+                    StockService::increase($purchaseOrderItem->inventory_item_id, $quantityReceived, 'goods_receipt', $receiptItem, 'Penerimaan gudang '.$receipt->number.' faktur '.$receipt->invoice_number);
                 }
 
                 $problemQuantity = $this->creditNoteProblemQuantity($item['condition'], $quantityReceived, $remaining);
@@ -4432,7 +4479,7 @@ class InventoryWorkflowController extends Controller
                     'currency_code' => $purchaseOrder->currency_code ?? 'IDR',
                     'exchange_rate' => $purchaseOrder->exchange_rate ?? 1,
                     'exchange_rate_date' => $purchaseOrder->exchange_rate_date,
-                    'notes' => 'Otomatis dibuat dari penerimaan ' . $receipt->number . '.',
+                    'notes' => 'Otomatis dibuat dari penerimaan '.$receipt->number.'.',
                 ]);
 
                 foreach ($creditNoteItems as $creditNoteItem) {
@@ -4457,6 +4504,7 @@ class InventoryWorkflowController extends Controller
             $purchaseOrder->load('items');
             $allReceived = $purchaseOrder->items->every(function ($purchaseOrderItem) {
                 $received = $this->fulfilledPurchaseOrderQuantity($purchaseOrderItem);
+
                 return $received >= $purchaseOrderItem->quantity_ordered;
             });
             $purchaseOrder->update(['status' => $allReceived ? 'received' : 'partial_received']);
@@ -4508,7 +4556,7 @@ class InventoryWorkflowController extends Controller
                         (int) $creditNoteItem->quantity_problem,
                         'credit_note_return',
                         $creditNoteItem,
-                        'Credit note manual return ' . $lockedCreditNote->number
+                        'Credit note manual return '.$lockedCreditNote->number
                     );
                 }
 
@@ -4609,7 +4657,7 @@ class InventoryWorkflowController extends Controller
 
             if ((int) $inventoryItem->stock_on_hand < (int) $data['quantity_problem']) {
                 throw ValidationException::withMessages([
-                    'quantity_problem' => 'Stok ' . $inventoryItem->name . ' tidak cukup untuk diajukan credit note.',
+                    'quantity_problem' => 'Stok '.$inventoryItem->name.' tidak cukup untuk diajukan credit note.',
                 ]);
             }
 
@@ -4687,7 +4735,7 @@ class InventoryWorkflowController extends Controller
                     'quantity' => $creditNoteItem->quantity_problem,
                     'uom' => $creditNoteItem->purchaseOrderItem?->uom ?? $creditNoteItem->inventoryItem?->uom,
                     'estimated_unit_price' => 0,
-                    'specification' => trim('Pengajuan ulang dari ' . $creditNote->number . ' / PO ' . $creditNote->purchaseOrder->number . '. ' . ($sourceItem?->specification ?? '')),
+                    'specification' => trim('Pengajuan ulang dari '.$creditNote->number.' / PO '.$creditNote->purchaseOrder->number.'. '.($sourceItem?->specification ?? '')),
                     'status' => 'ready_for_quotation',
                     'logistic_approval_status' => 'approved',
                     'logistic_checked_at' => now(),
@@ -4731,7 +4779,7 @@ class InventoryWorkflowController extends Controller
 
         return redirect()->route('vendor-prices', [
             'company_id' => $creditNote->purchaseOrder->purchaseRequest->camp()->value('company_id'),
-        ])->with('success', $createdItems->count() . ' item pengajuan ulang dibuat dan siap input harga vendor.');
+        ])->with('success', $createdItems->count().' item pengajuan ulang dibuat dan siap input harga vendor.');
     }
 
     public function storeDispatch(Request $request)
@@ -4991,7 +5039,7 @@ class InventoryWorkflowController extends Controller
 
                 if ((int) $item['quantity_received'] > $remaining) {
                     throw ValidationException::withMessages([
-                        'items' => 'Qty terima ' . $dispatchItem->inventoryItem->name . ' melebihi sisa barang dikirim.',
+                        'items' => 'Qty terima '.$dispatchItem->inventoryItem->name.' melebihi sisa barang dikirim.',
                     ]);
                 }
 
@@ -5704,20 +5752,12 @@ class InventoryWorkflowController extends Controller
             return $purchaseRequestItem->status;
         }
 
-        if ($finalTotal > 10000000 && $purchaseRequestItem->director_approval_status !== 'approved') {
-            return 'waiting_director';
-        }
-
         return 'vendor_selected';
     }
 
     private function directorStatusAfterQuotation(PurchaseRequestItem $purchaseRequestItem, float $finalTotal): string
     {
-        if ($finalTotal > 10000000 && $purchaseRequestItem->director_approval_status !== 'approved') {
-            return 'pending';
-        }
-
-        return $purchaseRequestItem->director_approval_status === 'approved' ? 'approved' : 'not_required';
+        return 'not_required';
     }
 
     private function creditNoteProblemQuantity(string $condition, int $quantityReceived, int $remainingQuantity): int
@@ -5812,6 +5852,7 @@ class InventoryWorkflowController extends Controller
         foreach ($data['items'] as $index => &$item) {
             if (! empty($item['inventory_item_id'])) {
                 $item['uom'] = InventoryItem::whereKey($item['inventory_item_id'])->value('uom');
+
                 continue;
             }
 
@@ -6023,10 +6064,54 @@ class InventoryWorkflowController extends Controller
                 && $user?->hasPermission('purchase_orders.check') => 'head_purchasing',
             $purchaseOrder->status === 'draft'
                 && $purchaseOrder->checked_by
+                && ! $purchaseOrder->ppic_reviewed_by
                 && ! $purchaseOrder->approved_by
-                && $user?->hasPermission('purchase_orders.approve') => 'director',
+                && $user?->hasPermission('purchase_orders.ppic_review') => 'ppic',
+            $purchaseOrder->status === 'draft'
+                && $purchaseOrder->checked_by
+                && $purchaseOrder->requires_main_director_approval
+                && $purchaseOrder->ppic_reviewed_by
+                && ! $purchaseOrder->approved_by
+                && $user?->hasPermission('purchase_orders.approve')
+                && $this->isMainDirector($user) => 'main_director',
             default => null,
         };
+    }
+
+    private function purchaseOrderApprovalAmountIdr(PurchaseOrder $purchaseOrder): float
+    {
+        return round((float) PurchaseOrder::query()
+            ->where('purchase_request_id', $purchaseOrder->purchase_request_id)
+            ->where('status', '!=', 'rejected')
+            ->lockForUpdate()
+            ->get(['grand_total', 'exchange_rate'])
+            ->sum(fn (PurchaseOrder $order) => $order->grandTotalIdr()), 2);
+    }
+
+    private function purchaseRequestHasMultiplePurchaseOrderGroups(PurchaseRequest $purchaseRequest): bool
+    {
+        return VendorQuotation::query()
+            ->where('is_selected', true)
+            ->where('selected_quantity', '>', 0)
+            ->whereHas('requestItem', fn ($query) => $query->where('purchase_request_id', $purchaseRequest->id))
+            ->get(['vendor_id', 'currency_code'])
+            ->unique(fn (VendorQuotation $quotation) => $quotation->vendor_id.':'.$quotation->currency_code)
+            ->count() > 1;
+    }
+
+    private function purchaseOrderDirectorThresholdIdr(): float
+    {
+        return (float) config('procurement.purchase_order_director_threshold_idr', 10000000);
+    }
+
+    private function isMainDirector($user): bool
+    {
+        $mainDirectorEmail = strtolower(trim((string) config('procurement.main_director_email')));
+
+        return $user
+            && $mainDirectorEmail !== ''
+            && strtolower((string) $user->email) === $mainDirectorEmail
+            && $user->hasPermission('purchase_orders.approve');
     }
 
     private function calculatePurchaseOrderTotals(float $subtotal, float $discountPercent, float $ppnPercent): array

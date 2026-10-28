@@ -108,8 +108,6 @@ Route::middleware('auth')->group(function () {
     Route::post('/request-items/{purchaseRequestItem}/reject-ppic', [InventoryWorkflowController::class, 'rejectItemPpic'])->name('request-items.reject-ppic');
     Route::post('/request-items/{purchaseRequestItem}/approve-manager-camp', [InventoryWorkflowController::class, 'approveItemManagerCamp'])->name('request-items.approve-manager-camp');
     Route::post('/request-items/{purchaseRequestItem}/reject-manager-camp', [InventoryWorkflowController::class, 'rejectItemManagerCamp'])->name('request-items.reject-manager-camp');
-    Route::post('/request-items/{purchaseRequestItem}/approve-director', [InventoryWorkflowController::class, 'approveItemDirector'])->name('request-items.approve-director');
-    Route::post('/request-items/{purchaseRequestItem}/reject-director', [InventoryWorkflowController::class, 'rejectItemDirector'])->name('request-items.reject-director');
     Route::post('/approval/{purchaseRequest}/bulk-approve', [InventoryWorkflowController::class, 'bulkApproveRequestItems'])->name('approvals.bulk-approve');
     Route::post('/request-items/{purchaseRequestItem}/quotations', [InventoryWorkflowController::class, 'storeQuotation'])->name('quotations.store');
     Route::post('/request-items/{purchaseRequestItem}/vendor-allocation', [InventoryWorkflowController::class, 'updateVendorAllocation'])->name('vendor-allocations.update');
@@ -122,6 +120,7 @@ Route::middleware('auth')->group(function () {
     Route::put('/purchase-orders/{purchaseOrder}', [InventoryWorkflowController::class, 'updatePurchaseOrder'])->name('purchase-orders.update');
     Route::post('/purchase-orders/{purchaseOrder}/propose', [InventoryWorkflowController::class, 'proposePurchaseOrder'])->name('purchase-orders.propose');
     Route::post('/purchase-orders/{purchaseOrder}/check', [InventoryWorkflowController::class, 'checkPurchaseOrder'])->name('purchase-orders.check');
+    Route::post('/purchase-orders/{purchaseOrder}/ppic-review', [InventoryWorkflowController::class, 'reviewPurchaseOrderByPpic'])->name('purchase-orders.ppic-review');
     Route::post('/purchase-orders/{purchaseOrder}/approve', [InventoryWorkflowController::class, 'approvePurchaseOrder'])->name('purchase-orders.approve');
     Route::post('/purchase-orders/{purchaseOrder}/reject', [InventoryWorkflowController::class, 'rejectPurchaseOrder'])->name('purchase-orders.reject');
     Route::post('/purchase-orders/{purchaseOrder}/decline', [InventoryWorkflowController::class, 'declinePurchaseOrder'])->name('purchase-orders.decline');

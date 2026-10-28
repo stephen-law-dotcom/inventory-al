@@ -1,6 +1,6 @@
             @if ($activeMenu === 'vendor-prices')
                 @php
-                    $vendorActiveStatuses = ['ready_for_quotation', 'vendor_selected', 'waiting_director'];
+                    $vendorActiveStatuses = ['ready_for_quotation', 'vendor_selected'];
                     $vendorHistoryStatuses = ['po_created', 'po_issued', 'partial_received', 'goods_received', 'rejected'];
                     $vendorPriceRequests = $purchaseRequests
                         ->map(function ($pr) use ($workflowTab, $vendorActiveStatuses, $vendorHistoryStatuses) {
@@ -116,9 +116,6 @@
                                                         </div>
                                                     @else
                                                         <span class="pill wait">Belum ada rekomendasi</span>
-                                                    @endif
-                                                    @if ($requestItem->status === 'waiting_director')
-                                                        <div><span class="pill wait">Menunggu direktur</span></div>
                                                     @endif
                                                     @if ($requestItem->procurement_approval_status === 'rejected')
                                                         <div><span class="pill bad">Ditolak</span></div>

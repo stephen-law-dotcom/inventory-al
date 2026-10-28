@@ -42,6 +42,7 @@
     $proposedSignatureImage = $purchaseOrder->proposedBy?->signature_image;
     $checkedSignatureImage = $purchaseOrder->checkedBy?->signature_image;
     $approvedSignatureImage = $purchaseOrder->approvedBy?->signature_image;
+    $mainDirectorName = config('procurement.main_director_name', 'Haryanto');
 @endphp
 <div class="toolbar"><button onclick="window.print()">Cetak / Simpan PDF</button></div>
 <main class="sheet">
@@ -126,9 +127,9 @@
         </div>
         <div class="signature">
             <div class="signature-title">Disetujui oleh,</div><div>
-            @if ($approvedSignatureImage)<img class="signature-image" src="{{ $approvedSignatureImage }}" alt="TTD {{ $purchaseOrder->approvedBy?->name }}">@endif
-            <div class="signature-line {{ $approvedSignatureImage ? 'has-image' : '' }}">{{ $purchaseOrder->approvedBy?->name ?? '-' }}</div>
-            <div class="signature-role">Direktur</div></div>
+            @if ($approvedSignatureImage)<img class="signature-image" src="{{ $approvedSignatureImage }}" alt="TTD {{ $mainDirectorName }}">@endif
+            <div class="signature-line {{ $approvedSignatureImage ? 'has-image' : '' }}">{{ $mainDirectorName }}</div>
+            <div class="signature-role">Direktur Utama</div></div>
         </div>
     </div>
 </main>

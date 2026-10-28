@@ -26,7 +26,10 @@ class NotificationService
 
         User::with('role')
             ->get()
-            ->filter(fn (User $user) => $user->hasPermission($permission) && self::canReceiveForCamp($user, $camp))
+            ->filter(fn (User $user) => $user->hasPermission($permission)
+                && self::canReceiveForCamp($user, $camp)
+                && ($log->event !== 'purchase_order.ppic_reviewed'
+                    || strtolower((string) $user->email) === strtolower((string) config('procurement.main_director_email'))))
             ->each(function (User $user) use ($title, $body, $url) {
                 SystemNotification::create([
                     'user_id' => $user->id,
@@ -71,7 +74,6 @@ class NotificationService
                 self::purchaseRequestItemVendorUrl($subject),
                 $camp,
             ],
-            'quotation.selected', 'quotation.allocated' => self::vendorDirectorApprovalRule($log, $subject, $camp),
             'approval.logistic.rejected', 'approval.chief_mechanic.rejected', 'approval.manager_camp.rejected' => [
                 'requests.manage',
                 'Order Request ditolak',
@@ -115,8 +117,15 @@ class NotificationService
                 null,
             ],
             'purchase_order.checked' => [
+                'purchase_orders.ppic_review',
+                'PO menunggu review PPIC',
+                $log->description,
+                self::purchaseOrderUrl($subject),
+                $camp,
+            ],
+            'purchase_order.ppic_reviewed' => [
                 'purchase_orders.approve',
-                'PO menunggu persetujuan Direktur',
+                'PO di atas Rp10 juta menunggu Direktur Utama',
                 $log->description,
                 self::purchaseOrderUrl($subject),
                 $camp,
@@ -135,7 +144,7 @@ class NotificationService
                 route('purchase-orders', ['tab' => 'history']),
                 $camp,
             ],
-            'purchase_order.approved', 'purchase_order.on_progress' => [
+            'purchase_order.approved', 'purchase_order.approved_delegated', 'purchase_order.on_progress' => [
                 'purchase_orders.issue',
                 'PO siap diproses pembelian',
                 $log->description,
@@ -249,18 +258,4 @@ class NotificationService
         ];
     }
 
-    private static function vendorDirectorApprovalRule(ActivityLog $log, mixed $subject, ?Camp $camp): ?array
-    {
-        if (! $subject instanceof PurchaseRequestItem || $subject->status !== 'waiting_director') {
-            return null;
-        }
-
-        return [
-            'approvals.director',
-            'Harga vendor menunggu Direktur',
-            $log->description,
-            self::purchaseRequestItemVendorUrl($subject),
-            $camp,
-        ];
-    }
 }

@@ -13,9 +13,14 @@
         ! $purchaseOrder->proposed_by && (bool) $purchaseOrder->rejected_at => 'Dikembalikan untuk revisi',
         ! $purchaseOrder->proposed_by => 'Draft',
         ! $purchaseOrder->checked_by => 'Menunggu Kepala Purchasing',
-        ! $purchaseOrder->approved_by => 'Menunggu Direktur',
-        default => 'Disetujui Direktur',
+        $purchaseOrder->approved_by && ! $purchaseOrder->ppic_reviewed_by => 'Disetujui (Alur Lama)',
+        ! $purchaseOrder->ppic_reviewed_by => 'Menunggu PPIC',
+        ! $purchaseOrder->approved_by => 'Menunggu Direktur Utama',
+        $purchaseOrder->requires_main_director_approval => 'Disetujui Direktur Utama',
+        default => 'Disetujui PPIC (Delegasi)',
     };
+    $mainDirectorName = config('procurement.main_director_name', 'Haryanto');
+    $isMainDirectorUser = strtolower((string) auth()->user()?->email) === strtolower((string) config('procurement.main_director_email'));
 @endphp
 <!doctype html>
 <html lang="id">
@@ -141,7 +146,7 @@
         .issue-panel form { margin-top: 16px; }
         .issue-panel button { width: 100%; min-height: 46px; }
         .locked { margin-top: 14px; padding: 12px; border-radius: 6px; background: #edf4f6; color: #4d6273; font-weight: 700; }
-        .signature-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+        .signature-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
         .signature { min-height: 132px; padding: 13px; border: 1px solid var(--line); border-radius: 7px; background: #fbfdfe; display: flex; flex-direction: column; justify-content: space-between; }
         .signature span { color: var(--muted); font-size: 11px; font-weight: 900; text-transform: uppercase; }
         .signature strong { display: block; margin-top: 3px; }
@@ -326,8 +331,14 @@
             <section class="panel">
                 <div class="section-heading">
                     <h2>Approval Purchase Order</h2>
-                    <span>{{ $purchaseOrder->rejected_at && ! $purchaseOrder->proposed_by ? 'Dikembalikan untuk revisi' : (! $purchaseOrder->proposed_by ? 'Draft - belum diajukan' : ($purchaseOrder->approved_by ? 'Disetujui Direktur' : ($purchaseOrder->checked_by ? 'Menunggu Direktur' : 'Menunggu Pemeriksaan'))) }}</span>
+                    <span>{{ $purchaseOrderDisplayStatus }}</span>
                 </div>
+                @if ($purchaseOrder->checked_by)
+                    <div class="locked">
+                        Dasar approval: {{ \App\Support\Currency::format($purchaseOrder->approval_amount_idr ?? $purchaseOrder->grandTotalIdr()) }} kumulatif dalam OR.
+                        Jalur: {{ $purchaseOrder->requires_main_director_approval ? 'review PPIC dan persetujuan Direktur Utama' : 'persetujuan PPIC berdasarkan delegasi' }}.
+                    </div>
+                @endif
                 <div class="signature-grid">
                     <div class="signature">
                         <div><span>Diusulkan Oleh</span><strong>{{ $purchaseOrder->proposedBy?->name ?? '-' }}</strong><small>Admin Purchasing</small></div>
@@ -338,13 +349,17 @@
                         <div class="signature-line">{{ $purchaseOrder->checked_at?->format('d M Y H:i') ?: 'Menunggu' }}</div>
                     </div>
                     <div class="signature">
-                        <div><span>Disetujui Oleh</span><strong>{{ $purchaseOrder->approvedBy?->name ?? '-' }}</strong><small>Direktur</small></div>
+                        <div><span>{{ $purchaseOrder->requires_main_director_approval ? 'Direview Oleh' : 'Disetujui Oleh' }}</span><strong>{{ $purchaseOrder->ppicReviewedBy?->name ?? '-' }}</strong><small>PPIC</small></div>
+                        <div class="signature-line">{{ $purchaseOrder->ppic_reviewed_at?->format('d M Y H:i') ?: 'Menunggu' }}</div>
+                    </div>
+                    <div class="signature">
+                        <div><span>Disetujui Oleh</span><strong>{{ $mainDirectorName }}</strong><small>Direktur Utama</small></div>
                         <div class="signature-line">{{ $purchaseOrder->approved_at?->format('d M Y H:i') ?: 'Menunggu' }}</div>
                     </div>
                 </div>
                 @if ($purchaseOrder->rejected_at)
                     <div class="rejection-box">
-                        <strong>{{ $purchaseOrder->status === 'rejected' ? 'Ditolak' : 'Dikembalikan untuk revisi' }} oleh {{ $purchaseOrder->rejectedBy?->name ?? '-' }} ({{ $purchaseOrder->rejection_stage === 'director' ? 'Direktur' : 'Kepala Divisi Purchasing' }})</strong>
+                        <strong>{{ $purchaseOrder->status === 'rejected' ? 'Ditolak' : 'Dikembalikan untuk revisi' }} oleh {{ $purchaseOrder->rejectedBy?->name ?? '-' }} ({{ match ($purchaseOrder->rejection_stage) { 'main_director', 'director' => 'Direktur Utama', 'ppic' => 'PPIC', default => 'Kepala Divisi Purchasing' } }})</strong>
                         <span>{{ $purchaseOrder->rejection_note }}</span>
                         <small>{{ $purchaseOrder->rejected_at->format('d M Y H:i') }}</small>
                     </div>
@@ -362,7 +377,16 @@
                             <button class="decline-button" type="submit" formaction="{{ route('purchase-orders.decline', $purchaseOrder) }}" onclick="return confirm('Tolak PO {{ $purchaseOrder->number }} secara permanen? Proses pengadaan akan dihentikan.')">Tolak PO</button>
                         </form>
                     @endif
-                    @if ($purchaseOrder->status === 'draft' && auth()->user()?->hasPermission('purchase_orders.approve') && $purchaseOrder->checked_by && ! $purchaseOrder->approved_by)
+                    @if ($purchaseOrder->status === 'draft' && auth()->user()?->hasPermission('purchase_orders.ppic_review') && $purchaseOrder->checked_by && ! $purchaseOrder->ppic_reviewed_by && ! $purchaseOrder->approved_by)
+                        <form method="post" action="{{ route('purchase-orders.ppic-review', $purchaseOrder) }}" onsubmit="return confirm('{{ $purchaseOrder->requires_main_director_approval ? 'Selesaikan review PPIC dan teruskan PO ini ke Direktur Utama?' : 'Setujui PO ini berdasarkan delegasi sampai Rp10 juta?' }}')">@csrf<button>{{ $purchaseOrder->requires_main_director_approval ? 'Selesaikan Review PPIC' : 'Setujui PO (Delegasi)' }}</button></form>
+                        <form class="reject-form" method="post" action="{{ route('purchase-orders.reject', $purchaseOrder) }}">
+                            @csrf
+                            <input name="rejection_note" placeholder="Alasan pengembalian atau penolakan" required maxlength="2000">
+                            <button type="submit" onclick="return confirm('Kembalikan PO {{ $purchaseOrder->number }} ke Purchasing untuk direvisi?')">Kembalikan untuk Revisi</button>
+                            <button class="decline-button" type="submit" formaction="{{ route('purchase-orders.decline', $purchaseOrder) }}" onclick="return confirm('Tolak PO {{ $purchaseOrder->number }} secara permanen? Proses pengadaan akan dihentikan.')">Tolak PO</button>
+                        </form>
+                    @endif
+                    @if ($purchaseOrder->status === 'draft' && auth()->user()?->hasPermission('purchase_orders.approve') && $isMainDirectorUser && $purchaseOrder->requires_main_director_approval && $purchaseOrder->ppic_reviewed_by && ! $purchaseOrder->approved_by)
                         <form method="post" action="{{ route('purchase-orders.approve', $purchaseOrder) }}" onsubmit="return confirm('Berikan persetujuan akhir untuk PO {{ $purchaseOrder->number }}?')">@csrf<button>Setujui PO</button></form>
                         <form class="reject-form" method="post" action="{{ route('purchase-orders.reject', $purchaseOrder) }}">
                             @csrf

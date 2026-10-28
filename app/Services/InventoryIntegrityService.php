@@ -103,14 +103,25 @@ class InventoryIntegrityService
     private function inspectPurchaseOrderQuantities(Collection $findings): void
     {
         PurchaseRequestItem::query()
-            ->with(['purchaseRequest', 'inventoryItem', 'purchaseOrderItems.purchaseOrder'])
+            ->with(['purchaseRequest', 'inventoryItem', 'selectedQuotations', 'purchaseOrderItems.purchaseOrder'])
             ->whereHas('purchaseOrderItems')
             ->each(function (PurchaseRequestItem $item) use ($findings) {
                 $allocated = (int) $item->purchaseOrderItems
                     ->filter(fn ($poItem) => $poItem->purchaseOrder?->status !== 'rejected')
                     ->sum('quantity_ordered');
+                $linkedQuotationIds = $item->purchaseOrderItems
+                    ->pluck('vendor_quotation_id')
+                    ->filter()
+                    ->map(fn ($id) => (int) $id);
+                $pendingAllocatedQuantity = $linkedQuotationIds->isEmpty()
+                    ? 0
+                    : (int) $item->selectedQuotations
+                        ->reject(fn ($quotation) => $linkedQuotationIds->contains((int) $quotation->id))
+                        ->sum('selected_quantity');
 
-                if ($allocated === $item->approvedQuantity() || ($allocated === 0 && $item->status === 'rejected')) {
+                if ($allocated === $item->approvedQuantity()
+                    || $allocated + $pendingAllocatedQuantity === $item->approvedQuantity()
+                    || ($allocated === 0 && $item->status === 'rejected')) {
                     return;
                 }
 

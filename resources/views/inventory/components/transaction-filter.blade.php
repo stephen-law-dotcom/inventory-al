@@ -14,7 +14,6 @@
         'vendor-prices' => [
             'ready_for_quotation' => 'Siap Input Harga',
             'vendor_selected' => 'Vendor Terpilih',
-            'waiting_director' => 'Menunggu Direktur',
             'po_created' => 'PO Dibuat',
             'goods_received' => 'Selesai Diterima',
             'rejected' => 'Ditolak',
@@ -22,7 +21,8 @@
         'purchase-orders' => request('tab') === 'approval'
             ? [
                 'waiting_head_purchasing' => 'Menunggu Kepala Purchasing',
-                'waiting_director' => 'Menunggu Direktur',
+                'waiting_ppic' => 'Menunggu PPIC',
+                'waiting_main_director' => 'Menunggu Direktur Utama',
             ]
             : [
                 'draft' => 'Draft',

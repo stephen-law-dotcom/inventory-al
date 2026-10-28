@@ -118,12 +118,11 @@
                         ($currentUser->hasPermission('approvals.logistic') && $item->logistic_approval_status === 'pending')
                         || ($currentUser->hasPermission('approvals.chief_mechanic') && $item->chief_mechanic_approval_status === 'pending')
                         || ($currentUser->hasPermission('approvals.manager_camp') && $item->manager_camp_approval_status === 'pending')
-                        || ($currentUser->hasPermission('approvals.director') && $item->status === 'waiting_director' && $item->director_approval_status === 'pending')
                     );
                     $vendorPendingItems = $purchaseRequests->flatMap->items->filter(fn ($item) =>
                         $item->purchaseOrderItems->isEmpty()
                         && (
-                            in_array($item->status, ['ready_for_quotation', 'waiting_director'], true)
+                            $item->status === 'ready_for_quotation'
                             || ($item->status === 'vendor_selected' && $item->procurement_approval_status === 'draft')
                         )
                     );

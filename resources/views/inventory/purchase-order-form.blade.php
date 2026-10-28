@@ -136,10 +136,10 @@
                         <option value="direct_site" @selected(old('delivery_destination') === 'direct_site')>Langsung ke site</option>
                     </select>
                 </label>
-                <label>Barang dipilih
-                    <input value="0 item" readonly data-selection-count>
+                <label>Alokasi dipilih
+                    <input value="0 alokasi" readonly data-selection-count>
                 </label>
-                <label>Estimasi PO draft
+                <label>PO yang akan dibuat
                     <input value="0 PO" readonly data-po-count>
                 </label>
                 @if ($canSeePrices)
@@ -222,7 +222,7 @@
                                     <span class="pill">{{ $currencyCode }}</span>
                                     <span class="pill">{{ $vendorLines->count() }} alokasi</span>
                                 </div>
-                                <button type="button" class="ghost" data-select-group="{{ $groupKey }}">Pilih semua vendor ini</button>
+                                <button type="button" class="ghost" data-select-group="{{ $groupKey }}">Pilih semua barang vendor ini</button>
                             </div>
                             <div class="table-wrap">
                                 <table>
@@ -284,8 +284,8 @@
         @if ($purchaseRequests->isNotEmpty())
             <section class="summary">
                 <div>
-                    <p>Total pilihan lintas vendor</p>
-                    <strong data-summary>0 item{{ $canSeePrices ? ', Rp0' : '' }}</strong>
+                    <p>Ringkasan PO terpilih</p>
+                    <strong data-summary>0 alokasi{{ $canSeePrices ? ', Rp0' : '' }}</strong>
                     @if ($canSeePrices)<p data-financial-summary>Diskon Rp0 · PPN Rp0 · Grand total Rp0</p>@endif
                 </div>
                 <div class="actions">
@@ -393,7 +393,7 @@
         const poCount = form.querySelector('[data-po-count]');
         const summary = form.querySelector('[data-summary]');
         if (selectionCount) {
-            selectionCount.value = `${count} item`;
+            selectionCount.value = `${count} alokasi`;
         }
         if (poCount) {
             poCount.value = `${selectedPoGroups.size} PO`;
@@ -401,8 +401,8 @@
         if (summary) {
             const poText = `${selectedPoGroups.size} PO akan dibuat`;
             summary.textContent = canSeePrices
-                ? `${count} item, ${poText}, Rp${currency.format(total)}`
-                : `${count} item, ${poText}`;
+                ? `${count} alokasi, ${poText}, Rp${currency.format(total)}`
+                : `${count} alokasi, ${poText}`;
         }
         const discountPercent = Number(form.querySelector('[data-discount-percent]')?.value || 0);
         const ppnPercent = Number(form.querySelector('[data-ppn-percent]')?.value || 0);
@@ -414,16 +414,18 @@
         }
     }
 
-    function setItemAllocations(itemId, checked) {
-        form.querySelectorAll(`[data-item-check][data-allocation-item="${itemId}"]`).forEach((check) => {
-            check.checked = checked;
+    function keepOnlyPoGroup(group) {
+        form.querySelectorAll('[data-item-check]:checked').forEach((check) => {
+            if (check.dataset.poGroup !== group) {
+                check.checked = false;
+            }
         });
     }
 
     form?.addEventListener('change', (event) => {
         const check = event.target.closest('[data-item-check]');
-        if (check) {
-            setItemAllocations(check.dataset.allocationItem, check.checked);
+        if (check?.checked) {
+            keepOnlyPoGroup(check.dataset.poGroup);
         }
         refreshSummary();
     });
@@ -448,8 +450,9 @@
         const group = groupButton.dataset.selectGroup;
         const checks = form.querySelectorAll(`[data-item-check][data-group="${group}"]`);
         const shouldCheck = Array.from(checks).some((check) => ! check.checked);
+        keepOnlyPoGroup(group);
         checks.forEach((check) => {
-            setItemAllocations(check.dataset.allocationItem, shouldCheck);
+            check.checked = shouldCheck;
         });
         refreshSummary();
     });
@@ -457,19 +460,20 @@
         const selectedItems = form.querySelectorAll('[data-item-check]:checked');
         if (! selectedItems.length) {
             event.preventDefault();
-            alert('Pilih minimal satu barang untuk dibuatkan PO.');
+            alert('Pilih minimal satu alokasi untuk dibuatkan PO.');
             return;
         }
 
         if (event.submitter?.value === 'post') {
             const poCount = new Set(Array.from(selectedItems, (check) => check.dataset.poGroup)).size;
-            const confirmed = window.confirm(`Posting ${poCount} Purchase Order dari ${selectedItems.length} item? Setelah diposting, seluruh PO tidak dapat diedit dan akan masuk tahap approval.`);
+            const confirmed = window.confirm(`Posting ${poCount} Purchase Order dari ${selectedItems.length} alokasi? Setelah diposting, PO tidak dapat diedit dan akan masuk tahap approval.`);
             if (! confirmed) {
                 event.preventDefault();
             }
         }
     });
-    form?.querySelectorAll('[data-item-check]:checked').forEach((check) => setItemAllocations(check.dataset.allocationItem, true));
+    const initiallySelected = form?.querySelector('[data-item-check]:checked');
+    if (initiallySelected) keepOnlyPoGroup(initiallySelected.dataset.poGroup);
     form?.querySelectorAll('[data-po-rate-card]').forEach((card) => {
         card.querySelector('[data-refresh-rate]')?.addEventListener('click', () => loadLatestRate(card, true));
         loadLatestRate(card);

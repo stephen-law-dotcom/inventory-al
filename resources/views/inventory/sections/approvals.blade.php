@@ -23,7 +23,12 @@
                         && $po->proposed_by
                         && (
                             ($currentUser->hasPermission('purchase_orders.check') && ! $po->checked_by)
-                            || ($currentUser->hasPermission('purchase_orders.approve') && $po->checked_by && ! $po->approved_by)
+                            || ($currentUser->hasPermission('purchase_orders.ppic_review') && $po->checked_by && ! $po->ppic_reviewed_by)
+                            || ($currentUser->hasPermission('purchase_orders.approve')
+                                && strtolower((string) $currentUser->email) === strtolower((string) config('procurement.main_director_email'))
+                                && $po->requires_main_director_approval
+                                && $po->ppic_reviewed_by
+                                && ! $po->approved_by)
                         )
                     );
                     $approvalWorkCount = $approvalRows->sum('ready_count');
@@ -71,7 +76,7 @@
                                 <span class="count">{{ $poWorkCount }}</span>
                             </div>
                             <div class="approval-meta">
-                                <span>Kepala Purchasing dan Direktur</span>
+                                <span>Kepala Purchasing, PPIC, dan Direktur Utama</span>
                                 <span>PO draft menunggu ttd</span>
                             </div>
                             <a class="button ghost" href="{{ route('purchase-orders', array_merge($companyQuery, ['tab' => 'approval'])) }}">Buka Approval PO</a>

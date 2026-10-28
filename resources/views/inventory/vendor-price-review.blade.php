@@ -308,7 +308,7 @@
     $vendorPricingCompleted = $hasPurchaseOrder || in_array($procurementStatus, ['approved', 'rejected'], true);
     $canEditQuotations = ! $vendorPricingCompleted
         && in_array($procurementStatus, ['draft', 'not_required'], true)
-        && in_array($requestItem->status, ['ready_for_quotation', 'vendor_selected', 'waiting_director'], true);
+        && in_array($requestItem->status, ['ready_for_quotation', 'vendor_selected'], true);
     $isEquipmentAllocationReview = ! $hasPurchaseOrder
         && auth()->user()?->hasPermission('approvals.equipment')
         && $procurementStatus === 'pending_equipment';
@@ -359,7 +359,7 @@
         <div class="actions">
             <a class="button ghost" href="{{ route('vendor-prices.print', $requestItem) }}" target="_blank">Cetak</a>
             <a class="button ghost" href="{{ $returnUrl }}">Kembali</a>
-            <span class="pill {{ $procurementStatus === 'rejected' ? 'bad' : ($vendorPricingCompleted ? 'ok' : ($requestItem->status === 'waiting_director' ? 'wait' : '')) }}">{{ $procurementStatus === 'rejected' ? 'Ditolak' : ($vendorPricingCompleted ? 'Selesai' : str_replace('_', ' ', $requestItem->status)) }}</span>
+            <span class="pill {{ $procurementStatus === 'rejected' ? 'bad' : ($vendorPricingCompleted ? 'ok' : '') }}">{{ $procurementStatus === 'rejected' ? 'Ditolak' : ($vendorPricingCompleted ? 'Selesai' : str_replace('_', ' ', $requestItem->status)) }}</span>
         </div>
     </header>
 
@@ -516,9 +516,6 @@
             <div>
                 <h2>Ranking Penawaran Vendor</h2>
             </div>
-            @if ($requestItem->status === 'waiting_director')
-                <span class="pill wait">Menunggu approval direktur</span>
-            @endif
         </div>
         @if ($rankedQuotations->isNotEmpty())
             <div class="notice">

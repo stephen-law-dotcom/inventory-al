@@ -19,6 +19,7 @@ use App\Models\StockOpnameItem;
 use App\Models\UsageLog;
 use App\Models\User;
 use App\Models\VendorQuotation;
+use App\Support\Currency;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 
@@ -189,11 +190,11 @@ class ReportService
                 'item' => $this->itemName($quote->requestItem->inventoryItem),
                 'vendor' => $quote->vendor?->name ?: '-', 'brand' => $quote->brand_name ?: '-',
                 'quantity' => $this->qty($quote->selected_quantity, $uom),
-                'unit_price' => $user->canSeePrices() ? $this->money($quote->unit_price) : 'Disembunyikan',
-                'total' => $user->canSeePrices() ? $this->money($quote->unit_price * $quote->selected_quantity) : 'Disembunyikan',
+                'unit_price' => $user->canSeePrices() ? $this->currencyValue($quote->unit_price, $quote->currency_code, $quote->exchange_rate) : 'Disembunyikan',
+                'total' => $user->canSeePrices() ? $this->currencyValue($quote->unit_price * $quote->selected_quantity, $quote->currency_code, $quote->exchange_rate) : 'Disembunyikan',
             ];
         });
-        $value = $models->sum(fn ($q) => $q->unit_price * $q->selected_quantity);
+        $value = $models->sum(fn ($q) => $q->totalIdr((float) $q->selected_quantity));
 
         return $this->payload('Report Vendor Terpilih', 'Vendor final yang dipilih untuk setiap barang pengajuan.', [
             ['key' => 'or', 'label' => 'Order Request'], ['key' => 'type_reference', 'label' => 'Jenis / Referensi'],
@@ -225,7 +226,7 @@ class ReportService
                     ? 'Pengajuan Ulang / CN '.$sourceCreditNoteNumbers->join(', CN ')
                     : 'Pengadaan Awal',
                 'site' => $this->campName($po->purchaseRequest?->camp), 'destination' => $po->delivery_destination === 'direct_site' ? 'Langsung site' : 'Gudang kantor',
-                'status' => $this->label($po->status), 'value' => $user->canSeePrices() ? $this->money($po->grand_total) : 'Disembunyikan',
+                'status' => $this->label($po->status), 'value' => $user->canSeePrices() ? $this->currencyValue($po->grand_total, $po->currency_code, $po->exchange_rate) : 'Disembunyikan',
                 '_status_tone' => $this->tone($po->status),
                 '_url' => route('purchase-orders.review', ['purchaseOrder' => $po, 'from' => 'reports']),
             ];
@@ -239,7 +240,7 @@ class ReportService
         ], $rows, [
             $this->kpi('Total PO', $models->count(), 'Sesuai filter'),
             $this->kpi('Masih berjalan', $models->whereNotIn('status', ['received', 'rejected'])->count(), 'Belum selesai'),
-            $this->kpi('Nilai PO', $user->canSeePrices() ? $this->money($models->sum('grand_total')) : 'Disembunyikan', 'Total sesuai filter'),
+            $this->kpi('Nilai PO', $user->canSeePrices() ? $this->money($models->sum(fn ($po) => $po->grandTotalIdr())) : 'Disembunyikan', 'Ekuivalen IDR sesuai filter'),
         ]);
     }
 
@@ -311,7 +312,7 @@ class ReportService
                 'vendor' => $cn->vendor?->name ?: '-',
                 'items' => $cn->items->map(fn ($i) => $this->itemName($i->inventoryItem).' x '.$this->number($i->quantity_problem))->join('; '),
                 'status' => $this->label($cn->status),
-                'value' => $user->canSeePrices() ? $this->money($cn->items->sum('total')) : 'Disembunyikan',
+                'value' => $user->canSeePrices() ? $this->currencyValue($cn->items->sum('total'), $cn->currency_code, $cn->exchange_rate) : 'Disembunyikan',
                 '_status_tone' => $this->tone($cn->status),
                 '_url' => route('credit-notes.review', ['creditNote' => $cn, 'from' => 'reports']),
             ];
@@ -324,7 +325,7 @@ class ReportService
         ], $rows, [
             $this->kpi('Total CN', $models->count(), $models->where('status', 'draft')->count().' masih draft'),
             $this->kpi('Barang bermasalah', $models->sum(fn ($cn) => $cn->items->count()), 'Detail barang'),
-            $this->kpi('Nilai credit', $user->canSeePrices() ? $this->money($models->sum(fn ($cn) => $cn->items->sum('total'))) : 'Disembunyikan', 'Sesuai filter'),
+            $this->kpi('Nilai credit', $user->canSeePrices() ? $this->money($models->sum(fn ($cn) => $cn->items->sum(fn ($item) => $item->totalIdr()))) : 'Disembunyikan', 'Ekuivalen IDR sesuai filter'),
         ]);
     }
 
@@ -398,7 +399,7 @@ class ReportService
                     'received' => $this->qty($received, $item->uom), 'remaining' => $this->qty($remaining, $item->uom),
                     'problem' => $this->qty($item->creditNoteItems->sum('quantity_problem'), $item->uom),
                     'eta' => $this->dateText($po->expected_at), 'lateness' => $lateDays > 0 ? $lateDays.' hari' : '-',
-                    'value' => $user->canSeePrices() ? $this->money($remaining * $item->unit_price) : 'Disembunyikan',
+                    'value' => $user->canSeePrices() ? $this->currencyValue($remaining * $item->unit_price, $item->currency_code, $item->exchange_rate) : 'Disembunyikan',
                     'status' => $remaining <= 0 ? 'Lengkap' : ($lateDays > 0 ? 'Terlambat' : 'Outstanding'),
                     '_status_tone' => $remaining <= 0 ? 'ok' : ($lateDays > 0 ? 'bad' : 'wait'), '_remaining' => $remaining, '_late' => $lateDays,
                     '_url' => route('purchase-orders.review', ['purchaseOrder' => $po, 'from' => 'reports']),
@@ -662,6 +663,17 @@ class ReportService
 
     private function kpi(string $label, mixed $value, string $note): array { return compact('label', 'value', 'note'); }
     private function money($value): string { return 'Rp'.number_format((float) $value, 0, ',', '.'); }
+    private function currencyValue($value, ?string $currencyCode, $exchangeRate): string
+    {
+        $currencyCode = strtoupper($currencyCode ?: 'IDR');
+        $formatted = Currency::format($value, $currencyCode);
+
+        if ($currencyCode === 'IDR') {
+            return $formatted;
+        }
+
+        return $formatted.' (setara '.$this->money(Currency::toIdr($value, $exchangeRate ?: 1)).')';
+    }
     private function number($value): string { return number_format((float) $value, ((float) $value == (int) $value ? 0 : 2), ',', '.'); }
     private function qty($value, ?string $uom): string { return $this->number($value).' '.($uom ?: ''); }
     private function dateText($date): string { return $date ? $date->format('d M Y') : '-'; }

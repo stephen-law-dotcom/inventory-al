@@ -139,6 +139,14 @@
                     <label>PPN (%)
                         <input type="number" name="ppn_percent" value="{{ old('ppn_percent', number_format((float) $purchaseOrder->ppn_percent, 2, '.', '')) }}" min="0" max="100" step="0.01" data-ppn-percent>
                     </label>
+                    @if ($purchaseOrder->currency_code !== 'IDR' && auth()->user()->hasPermission('exchange_rates.override'))
+                        <label>Kurs realisasi (opsional)
+                            <input type="number" name="actual_exchange_rate" value="{{ old('actual_exchange_rate', $purchaseOrder->actual_exchange_rate) }}" min="0.000001" step="0.000001" placeholder="Tidak memengaruhi nilai PO">
+                        </label>
+                        <label>Tanggal kurs realisasi
+                            <input type="date" name="actual_exchange_rate_date" value="{{ old('actual_exchange_rate_date', $purchaseOrder->actual_exchange_rate_date?->toDateString()) }}">
+                        </label>
+                    @endif
                 @endif
                 <label class="full">Catatan PO
                     <textarea name="notes">{{ old('notes', $purchaseOrder->notes) }}</textarea>
@@ -174,7 +182,7 @@
                                 <td>{{ $purchaseOrder->ordered_at->diffInDays($purchaseOrder->expected_at ?? $purchaseOrder->ordered_at) }} hari</td>
                                 @if ($canSeePrices)
                                     <td class="price"><input type="number" name="unit_prices[{{ $item->id }}]" value="{{ old('unit_prices.'.$item->id, number_format((float) $item->unit_price, 2, '.', '')) }}" min="0.01" step="0.01" data-unit-price data-quantity="{{ $item->quantity_ordered }}" aria-label="Harga satuan {{ $item->inventoryItem->name }}"></td>
-                                    <td><strong data-row-total>Rp{{ number_format((float) $item->total, 0, ',', '.') }}</strong></td>
+                                    <td><strong data-row-total>{{ \App\Support\Currency::format($item->total, $purchaseOrder->currency_code) }}</strong></td>
                                 @endif
                             </tr>
                         @endforeach
@@ -189,7 +197,7 @@
         <section class="summary">
             <div>
                 <p>Item mengikuti alokasi vendor yang telah disetujui</p>
-                <strong data-summary>{{ $purchaseOrder->items->count() }} item{{ $canSeePrices ? ', Rp'.number_format((float) $purchaseOrder->grand_total, 0, ',', '.') : '' }}</strong>
+                <strong data-summary>{{ $purchaseOrder->items->count() }} item{{ $canSeePrices ? ', '.\App\Support\Currency::format($purchaseOrder->grand_total, $purchaseOrder->currency_code) : '' }}</strong>
                 @if ($canSeePrices)<p data-financial-summary></p>@endif
             </div>
             <div class="actions">
@@ -203,17 +211,19 @@
 <script>
     const form = document.querySelector('[data-po-form]');
     const currency = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 });
+    const currencyCode = @json($purchaseOrder->currency_code ?? 'IDR');
+    const currencyPrefix = currencyCode === 'IDR' ? 'Rp' : `${currencyCode} `;
     function refreshTotals() {
         let subtotal = 0;
         form.querySelectorAll('[data-unit-price]').forEach((input) => {
             const total = Number(input.value || 0) * Number(input.dataset.quantity || 0);
             subtotal += total;
-            input.closest('tr').querySelector('[data-row-total]').textContent = `Rp${currency.format(total)}`;
+            input.closest('tr').querySelector('[data-row-total]').textContent = `${currencyPrefix}${currency.format(total)}`;
         });
         const discount = subtotal * Number(form.querySelector('[data-discount-percent]').value || 0) / 100;
         const ppn = Math.max(0, subtotal - discount) * Number(form.querySelector('[data-ppn-percent]').value || 0) / 100;
-        form.querySelector('[data-summary]').textContent = `{{ $purchaseOrder->items->count() }} item, Rp${currency.format(subtotal - discount + ppn)}`;
-        form.querySelector('[data-financial-summary]').textContent = `Subtotal Rp${currency.format(subtotal)} · Diskon Rp${currency.format(discount)} · PPN Rp${currency.format(ppn)}`;
+        form.querySelector('[data-summary]').textContent = `{{ $purchaseOrder->items->count() }} item, ${currencyPrefix}${currency.format(subtotal - discount + ppn)}`;
+        form.querySelector('[data-financial-summary]').textContent = `Subtotal ${currencyPrefix}${currency.format(subtotal)} | Diskon ${currencyPrefix}${currency.format(discount)} | PPN ${currencyPrefix}${currency.format(ppn)}`;
     }
     form.addEventListener('input', refreshTotals);
     refreshTotals();

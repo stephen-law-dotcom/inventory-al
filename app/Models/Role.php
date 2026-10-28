@@ -43,6 +43,7 @@ class Role extends Model
             ],
             'Harga dan Finansial' => [
                 'prices.view' => 'Lihat nominal harga dan nilai transaksi',
+                'exchange_rates.override' => 'Ubah kurs transaksi secara manual',
             ],
             'Purchase Order' => [
                 'purchase_orders.view' => 'Lihat purchase order',

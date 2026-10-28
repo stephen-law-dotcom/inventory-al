@@ -1,0 +1,40 @@
+<?php
+
+return [
+    'default' => 'IDR',
+    'warning_threshold_percent' => 2,
+    'frankfurter_endpoint' => env('FRANKFURTER_API_URL', 'https://api.frankfurter.dev'),
+    'cache_seconds' => (int) env('EXCHANGE_RATE_CACHE_SECONDS', 21600),
+    'stale_business_days' => (int) env('EXCHANGE_RATE_STALE_BUSINESS_DAYS', 3),
+
+    // Kurs referensi Frankfurter tersedia untuk kode ini. IDR selalu bernilai 1.
+    'supported' => [
+        'IDR' => 'Rupiah',
+        'AED' => 'UAE Dirham',
+        'AUD' => 'Australian Dollar',
+        'BND' => 'Brunei Dollar',
+        'CAD' => 'Canadian Dollar',
+        'CHF' => 'Swiss Franc',
+        'CNH' => 'China Yuan Offshore',
+        'CNY' => 'China Yuan',
+        'DKK' => 'Danish Krone',
+        'EUR' => 'Euro',
+        'GBP' => 'Pound Sterling',
+        'HKD' => 'Hong Kong Dollar',
+        'JPY' => 'Japanese Yen',
+        'KRW' => 'Korean Won',
+        'KWD' => 'Kuwaiti Dinar',
+        'LAK' => 'Lao Kip',
+        'MYR' => 'Malaysian Ringgit',
+        'NOK' => 'Norwegian Krone',
+        'NZD' => 'New Zealand Dollar',
+        'PGK' => 'Papua New Guinea Kina',
+        'PHP' => 'Philippine Peso',
+        'SAR' => 'Saudi Riyal',
+        'SEK' => 'Swedish Krona',
+        'SGD' => 'Singapore Dollar',
+        'THB' => 'Thai Baht',
+        'USD' => 'US Dollar',
+        'VND' => 'Vietnamese Dong',
+    ],
+];

@@ -104,11 +104,9 @@
 @php
     $purchaseRequest = $requestItem->purchaseRequest;
     $formatDate = fn ($date) => $date ? \Illuminate\Support\Carbon::parse($date)->format('d-m-Y') : '-';
-    $rankedQuotations = $requestItem->quotations->sortBy([
-        ['unit_price', 'asc'],
-        ['available_quantity', 'desc'],
-        ['lead_time_days', 'asc'],
-    ])->values();
+    $rankedQuotations = $requestItem->quotations
+        ->sortBy(fn ($quotation) => sprintf('%020.4f:%010d:%010d', $quotation->unitPriceIdr(), 999999999 - $quotation->available_quantity, $quotation->lead_time_days))
+        ->values();
     $visibleQuotations = $rankedQuotations->take(3)->values();
     $equipment = trim(($requestItem->unit?->code ?: $purchaseRequest->unit?->code ?: '-') . ' | ' . ($requestItem->unit?->name ?: $purchaseRequest->unit?->name ?: '-'));
     $logisticName = $requestItem->procurement_created_by_name ?: 'Admin Logistic';
@@ -184,7 +182,8 @@
                     $isUsed = $usedQuantity > 0;
                 @endphp
                 <td class="price {{ $isUsed ? 'selected-cell' : '' }}">
-                    {{ $canSeePrices ? number_format($quotation->unit_price, 0, ',', '.') : '-' }}
+                    {{ $canSeePrices ? \App\Support\Currency::format($quotation->unit_price, $quotation->currency_code) : '-' }}
+                    @if ($canSeePrices && $quotation->currency_code !== 'IDR')<span class="selected-qty">≈ {{ \App\Support\Currency::format($quotation->unitPriceIdr()) }}</span>@endif
                     @if ($isUsed)<span class="selected-qty">{{ $usedQuantity }} {{ $requestItem->uom ?? $requestItem->inventoryItem->uom }}</span>@endif
                 </td>
                 <td class="{{ $isUsed ? 'selected-cell' : '' }}">
@@ -204,7 +203,10 @@
                     $usedQuantity = $selectedQuantity($quotation);
                     $totalQuantity = $usedQuantity ?: ($requestItem->procurement_approval_status === 'approved' ? $requestItem->approvedQuantity() : $requestItem->quantity);
                 @endphp
-                <td class="price {{ $usedQuantity > 0 ? 'selected-cell' : '' }}">{{ $canSeePrices ? number_format($quotation->unit_price * $totalQuantity, 0, ',', '.') : '-' }}</td>
+                <td class="price {{ $usedQuantity > 0 ? 'selected-cell' : '' }}">
+                    {{ $canSeePrices ? \App\Support\Currency::format($quotation->unit_price * $totalQuantity, $quotation->currency_code) : '-' }}
+                    @if ($canSeePrices && $quotation->currency_code !== 'IDR')<span class="selected-qty">≈ {{ \App\Support\Currency::format($quotation->totalIdr($totalQuantity)) }}</span>@endif
+                </td>
                 <td class="{{ $usedQuantity > 0 ? 'selected-cell' : '' }}">{{ $usedQuantity > 0 ? $usedQuantity.' '.($requestItem->uom ?? $requestItem->inventoryItem->uom) : '' }}</td>
             @endforeach
             @for ($i = $visibleQuotations->count(); $i < 3; $i++)

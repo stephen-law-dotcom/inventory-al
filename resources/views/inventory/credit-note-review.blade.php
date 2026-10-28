@@ -101,7 +101,11 @@
         <div class="stat"><span>Status</span><strong>{{ $statusLabel($creditNote->status) }}</strong></div>
         <div class="stat"><span>Total Qty Problem</span><strong>{{ number_format($creditNote->items->sum('quantity_problem'), 0, ',', '.') }}</strong></div>
         <div class="stat"><span>Pengajuan Ulang</span><strong>{{ $creditNote->items->whereNotNull('retry_request_item_id')->count() }}/{{ $creditNote->items->count() }}</strong></div>
-        <div class="stat"><span>Nilai Credit</span><strong>{{ $canSeePrices ? 'Rp'.number_format($totalValue, 0, ',', '.') : 'Disembunyikan' }}</strong></div>
+        <div class="stat">
+            <span>Nilai Credit</span>
+            <strong>{{ $canSeePrices ? \App\Support\Currency::format($totalValue, $creditNote->currency_code) : 'Disembunyikan' }}</strong>
+            @if ($canSeePrices && $creditNote->currency_code !== 'IDR')<div class="muted">≈ {{ \App\Support\Currency::format($totalValue * $creditNote->exchange_rate) }}</div>@endif
+        </div>
     </div>
 
     <div class="layout">
@@ -114,6 +118,7 @@
                     <div class="meta"><span>Vendor</span><strong>{{ $creditNote->vendor?->name ?: '-' }}</strong></div>
                     <div class="meta"><span>Faktur</span><strong>{{ $creditNote->invoice_number ?: '-' }}</strong></div>
                     <div class="meta"><span>PO</span><strong>{{ $creditNote->purchaseOrder?->number ?: '-' }}</strong></div>
+                    <div class="meta"><span>Mata Uang / Kurs</span><strong>{{ $creditNote->currency_code }}{{ $creditNote->currency_code !== 'IDR' ? ' · Rp'.number_format($creditNote->exchange_rate, 2, ',', '.') : '' }}</strong></div>
                     <div class="meta"><span>Diajukan Oleh</span><strong>{{ $creditNote->requested_by_name ?: $creditNote->created_by_name }}</strong></div>
                 </div>
             </section>
@@ -129,8 +134,8 @@
                             <td>{{ ucwords(str_replace('_', ' ', $item->issue_type)) }}<div class="muted">{{ ucwords(str_replace('_', ' ', $item->resolution)) }}</div></td>
                             <td>{{ number_format($item->quantity_problem, 0, ',', '.') }} {{ $item->purchaseOrderItem?->uom ?? $item->inventoryItem?->uom }}</td>
                             @if ($canSeePrices)
-                                <td class="number">Rp{{ number_format($item->unit_price, 0, ',', '.') }}</td>
-                                <td class="number">Rp{{ number_format($item->total, 0, ',', '.') }}</td>
+                                <td class="number">{{ \App\Support\Currency::format($item->unit_price, $item->currency_code) }}</td>
+                                <td class="number">{{ \App\Support\Currency::format($item->total, $item->currency_code) }}</td>
                             @endif
                             <td>
                                 @if ($item->retryRequestItem)

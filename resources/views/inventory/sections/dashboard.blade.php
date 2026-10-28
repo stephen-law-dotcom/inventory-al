@@ -136,8 +136,8 @@
                     $activePo = $purchaseOrders->whereIn('status', ['draft', 'on_progress', 'submitted', 'issued', 'partial_received']);
                     $receivingPo = $purchaseOrders->whereIn('status', ['submitted', 'issued', 'partial_received']);
                     $openCreditNotes = $creditNotes->whereNotIn('status', ['closed']);
-                    $openPoValue = $activePo->sum('grand_total');
-                    $periodPoValue = $periodPurchaseOrders->sum('grand_total');
+                    $openPoValue = $activePo->sum(fn ($purchaseOrder) => $purchaseOrder->grandTotalIdr());
+                    $periodPoValue = $periodPurchaseOrders->sum(fn ($purchaseOrder) => $purchaseOrder->grandTotalIdr());
                     $periodUsageQty = $periodUsageLogs->sum('quantity');
                     $topUsageItems = $periodUsageLogs
                         ->groupBy('inventory_item_id')
@@ -377,7 +377,14 @@
                                         </td>
                                         <td>{{ $po->vendor?->name ?? '-' }}</td>
                                         <td><span class="pill {{ in_array($po->status, ['submitted', 'issued', 'received'], true) ? 'ok' : 'wait' }}">{{ $purchaseOrderStatusLabel($po->status) }}</span></td>
-                                        @if ($canSeePrices)<td class="price">Rp{{ number_format($po->grand_total, 0, ',', '.') }}</td>@endif
+                                        @if ($canSeePrices)
+                                            <td class="price">
+                                                <strong>{{ \App\Support\Currency::format($po->grand_total, $po->currency_code) }}</strong>
+                                                @if ($po->currency_code !== 'IDR')
+                                                    <div class="muted">Setara {{ \App\Support\Currency::format($po->grandTotalIdr()) }}</div>
+                                                @endif
+                                            </td>
+                                        @endif
                                     </tr>
                                 @empty
                                     <tr><td colspan="{{ $canSeePrices ? 4 : 3 }}">Belum ada PO aktif.</td></tr>

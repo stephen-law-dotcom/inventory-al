@@ -11,7 +11,13 @@ class PurchaseOrderItem extends Model
     protected $casts = [
         'unit_price' => 'decimal:2',
         'total' => 'decimal:2',
+        'exchange_rate' => 'decimal:6',
     ];
+
+    public function totalIdr(): float
+    {
+        return (float) $this->total * (float) ($this->exchange_rate ?: 1);
+    }
 
     public function purchaseOrder()
     {

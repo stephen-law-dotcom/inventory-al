@@ -26,7 +26,17 @@ class PurchaseOrder extends Model
         'ppn_percent' => 'decimal:2',
         'ppn_amount' => 'decimal:2',
         'grand_total' => 'decimal:2',
+        'reference_exchange_rate' => 'decimal:6',
+        'exchange_rate' => 'decimal:6',
+        'exchange_rate_date' => 'date',
+        'actual_exchange_rate' => 'decimal:6',
+        'actual_exchange_rate_date' => 'date',
     ];
+
+    public function grandTotalIdr(): float
+    {
+        return (float) $this->grand_total * (float) ($this->exchange_rate ?: 1);
+    }
 
     public function purchaseRequest()
     {

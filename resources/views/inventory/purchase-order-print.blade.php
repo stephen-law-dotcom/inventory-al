@@ -84,16 +84,27 @@
                 <td>{{ $item->description }}@if($item->brand_name)<br><small>Merek: {{ $item->brand_name }}</small>@endif</td>
                 <td class="center">{{ $item->quantity_ordered }} {{ $item->uom }}</td>
                 @if ($canSeePrices)
-                    <td class="number">{{ number_format($item->unit_price, 2, '.', ',') }}</td>
-                    <td class="number">{{ number_format($item->total, 2, '.', ',') }}</td>
+                    <td class="number">{{ \App\Support\Currency::format($item->unit_price, $purchaseOrder->currency_code) }}</td>
+                    <td class="number">{{ \App\Support\Currency::format($item->total, $purchaseOrder->currency_code) }}</td>
                 @endif
             </tr>
         @endforeach
         @if ($canSeePrices)
-            <tr><td colspan="4" class="summary-label">Summary</td><td class="summary-currency">Rp.</td><td class="summary-value">{{ number_format($purchaseOrder->subtotal, 2, '.', ',') }}</td></tr>
-            <tr><td colspan="4" class="summary-label">Discount {{ number_format($purchaseOrder->discount_percent, 2, '.', '') }}%</td><td class="summary-currency">Rp.</td><td class="summary-value">{{ number_format($purchaseOrder->discount_amount, 2, '.', ',') }}</td></tr>
-            <tr><td colspan="4" class="summary-label">PPN {{ number_format($purchaseOrder->ppn_percent, 2, '.', '') }}%</td><td class="summary-currency">Rp.</td><td class="summary-value">{{ number_format($purchaseOrder->ppn_amount, 2, '.', ',') }}</td></tr>
-            <tr><td colspan="4" class="summary-label">Grand Total</td><td class="summary-currency">Rp.</td><td class="summary-value"><strong>{{ number_format($purchaseOrder->grand_total, 2, '.', ',') }}</strong></td></tr>
+            <tr><td colspan="4" class="summary-label">Summary</td><td class="summary-currency">{{ $purchaseOrder->currency_code }}</td><td class="summary-value">{{ number_format($purchaseOrder->subtotal, 2, '.', ',') }}</td></tr>
+            <tr><td colspan="4" class="summary-label">Discount {{ number_format($purchaseOrder->discount_percent, 2, '.', '') }}%</td><td class="summary-currency">{{ $purchaseOrder->currency_code }}</td><td class="summary-value">{{ number_format($purchaseOrder->discount_amount, 2, '.', ',') }}</td></tr>
+            <tr><td colspan="4" class="summary-label">PPN {{ number_format($purchaseOrder->ppn_percent, 2, '.', '') }}%</td><td class="summary-currency">{{ $purchaseOrder->currency_code }}</td><td class="summary-value">{{ number_format($purchaseOrder->ppn_amount, 2, '.', ',') }}</td></tr>
+            <tr><td colspan="4" class="summary-label">Grand Total</td><td class="summary-currency">{{ $purchaseOrder->currency_code }}</td><td class="summary-value"><strong>{{ number_format($purchaseOrder->grand_total, 2, '.', ',') }}</strong></td></tr>
+            @if ($purchaseOrder->currency_code !== 'IDR')
+                @php
+                    $rateSourceLabel = match ($purchaseOrder->exchange_rate_source) {
+                        'frankfurter' => 'Frankfurter mid-market',
+                        'BI' => 'Bank Indonesia',
+                        'manual' => 'Manual',
+                        default => 'Sistem',
+                    };
+                @endphp
+                <tr><td colspan="4" class="summary-label">Ekuivalen IDR (kurs {{ $rateSourceLabel }} {{ optional($purchaseOrder->exchange_rate_date)->format('d-m-Y') }}: {{ number_format($purchaseOrder->exchange_rate, 2, '.', ',') }})</td><td class="summary-currency">Rp.</td><td class="summary-value"><strong>{{ number_format($purchaseOrder->grandTotalIdr(), 2, '.', ',') }}</strong></td></tr>
+            @endif
         @endif
         </tbody>
     </table>

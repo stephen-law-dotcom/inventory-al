@@ -79,7 +79,14 @@
                                     @endforeach
                                     @if ($remainingItems > 0)<span class="muted">+{{ $remainingItems }} barang lainnya</span>@endif
                                 </td>
-                                @if ($canSeePrices)<td><strong>Rp{{ number_format($purchaseOrder->grand_total, 0, ',', '.') }}</strong></td>@endif
+                                @if ($canSeePrices)
+                                    <td>
+                                        <strong>{{ \App\Support\Currency::format($purchaseOrder->grand_total, $purchaseOrder->currency_code) }}</strong>
+                                        @if ($purchaseOrder->currency_code !== 'IDR')
+                                            <div class="muted">Setara {{ \App\Support\Currency::format($purchaseOrder->grandTotalIdr()) }}</div>
+                                        @endif
+                                    </td>
+                                @endif
                                 <td>
                                     <span class="pill {{ $purchaseOrder->status === 'rejected' ? 'bad' : (in_array($purchaseOrder->status, ['received', 'submitted', 'issued'], true) || $purchaseOrder->approved_by ? 'ok' : 'wait') }}">{{ $purchaseOrderDisplayStatus }}</span>
                                     @if ($purchaseOrder->status === 'draft' && ! $purchaseOrder->proposed_by)

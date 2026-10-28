@@ -71,7 +71,7 @@
                                                 $selectedQuotations = $requestItem->selectedQuotations;
                                                 $recommendedQuotation = $requestItem->quotations
                                                     ->where('available_quantity', '>=', $requestItem->quantity)
-                                                    ->sortBy([['unit_price', 'asc'], ['available_quantity', 'desc'], ['lead_time_days', 'asc']])
+                                                    ->sortBy(fn ($quotation) => $quotation->unitPriceIdr())
                                                     ->first();
                                                 $quotationCount = $requestItem->quotations->count();
                                             @endphp
@@ -102,7 +102,10 @@
                                                                 <span class="pill ok">{{ $selectedQuotation->vendor->name }} - {{ $selectedQuotation->selected_quantity }} {{ $requestItem->uom ?? $requestItem->inventoryItem->uom }}</span>
                                                                 <div class="muted">{{ $selectedQuotation->brand_name ?: 'Merek belum diisi' }} - stok {{ $selectedQuotation->available_quantity }}</div>
                                                                 @if ($canSeePrices)
-                                                                    <div class="price">Rp{{ number_format($selectedQuotation->unit_price * $selectedQuotation->selected_quantity, 0, ',', '.') }}</div>
+                                                                    <div class="price">
+                                                                        <strong>{{ \App\Support\Currency::format($selectedQuotation->unit_price * $selectedQuotation->selected_quantity, $selectedQuotation->currency_code) }}</strong>
+                                                                        @if ($selectedQuotation->currency_code !== 'IDR')<div class="muted">≈ {{ \App\Support\Currency::format($selectedQuotation->totalIdr()) }}</div>@endif
+                                                                    </div>
                                                                 @endif
                                                             </div>
                                                         @endforeach

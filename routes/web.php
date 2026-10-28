@@ -38,6 +38,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/approval', [InventoryWorkflowController::class, 'approvals'])->name('approvals');
     Route::get('/approval/{purchaseRequest}/review', [InventoryWorkflowController::class, 'reviewApproval'])->name('approvals.review');
     Route::get('/harga-vendor', [InventoryWorkflowController::class, 'vendorPrices'])->name('vendor-prices');
+    Route::get('/harga-vendor/kurs-terbaru', [InventoryWorkflowController::class, 'latestExchangeRate'])->name('exchange-rates.latest');
     Route::get('/harga-vendor/items/{purchaseRequestItem}/review', [InventoryWorkflowController::class, 'reviewVendorPrice'])->name('vendor-prices.review');
     Route::get('/harga-vendor/items/{purchaseRequestItem}/print', [InventoryWorkflowController::class, 'printVendorPrice'])->name('vendor-prices.print');
     Route::get('/purchase-orders', [InventoryWorkflowController::class, 'purchaseOrders'])->name('purchase-orders');

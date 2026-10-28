@@ -407,8 +407,8 @@
                                 </td>
                                 <td>{{ number_format($item->quantity_ordered, 0, ',', '.') }} {{ $item->uom }}</td>
                                 @if ($canSeePrices)
-                                    <td class="number">Rp{{ number_format($item->unit_price, 0, ',', '.') }}</td>
-                                    <td class="number">Rp{{ number_format($item->total, 0, ',', '.') }}</td>
+                                    <td class="number">{{ \App\Support\Currency::format($item->unit_price, $purchaseOrder->currency_code) }}</td>
+                                    <td class="number">{{ \App\Support\Currency::format($item->total, $purchaseOrder->currency_code) }}</td>
                                 @endif
                             </tr>
                         @endforeach
@@ -416,10 +416,25 @@
                     </table>
                 </div>
                 @if ($canSeePrices)
-                    <div class="total-row"><span>Subtotal</span><strong>Rp{{ number_format($purchaseOrder->subtotal, 2, ',', '.') }}</strong></div>
-                    <div class="total-row"><span>Diskon ({{ number_format($purchaseOrder->discount_percent, 2, ',', '.') }}%)</span><strong>Rp{{ number_format($purchaseOrder->discount_amount, 2, ',', '.') }}</strong></div>
-                    <div class="total-row"><span>PPN ({{ number_format($purchaseOrder->ppn_percent, 2, ',', '.') }}%)</span><strong>Rp{{ number_format($purchaseOrder->ppn_amount, 2, ',', '.') }}</strong></div>
-                    <div class="total-row"><span>Grand Total</span><strong>Rp{{ number_format($purchaseOrder->grand_total, 2, ',', '.') }}</strong></div>
+                    <div class="total-row"><span>Subtotal</span><strong>{{ \App\Support\Currency::format($purchaseOrder->subtotal, $purchaseOrder->currency_code) }}</strong></div>
+                    <div class="total-row"><span>Diskon ({{ number_format($purchaseOrder->discount_percent, 2, ',', '.') }}%)</span><strong>{{ \App\Support\Currency::format($purchaseOrder->discount_amount, $purchaseOrder->currency_code) }}</strong></div>
+                    <div class="total-row"><span>PPN ({{ number_format($purchaseOrder->ppn_percent, 2, ',', '.') }}%)</span><strong>{{ \App\Support\Currency::format($purchaseOrder->ppn_amount, $purchaseOrder->currency_code) }}</strong></div>
+                    <div class="total-row"><span>Grand Total</span><strong>{{ \App\Support\Currency::format($purchaseOrder->grand_total, $purchaseOrder->currency_code) }}</strong></div>
+                    @if ($purchaseOrder->currency_code !== 'IDR')
+                        @php
+                            $rateSourceLabel = match ($purchaseOrder->exchange_rate_source) {
+                                'frankfurter' => 'Frankfurter (mid-market)',
+                                'BI' => 'Bank Indonesia',
+                                'manual' => 'Manual',
+                                default => 'Sistem',
+                            };
+                        @endphp
+                        <div class="total-row"><span>Ekuivalen IDR</span><strong>≈ {{ \App\Support\Currency::format($purchaseOrder->grandTotalIdr()) }}</strong></div>
+                        <div class="total-row"><span>Kurs {{ $rateSourceLabel }} {{ optional($purchaseOrder->exchange_rate_date)->format('d M Y') }}</span><strong>Rp{{ number_format($purchaseOrder->exchange_rate, 2, ',', '.') }}/{{ $purchaseOrder->currency_code }}</strong></div>
+                        @if ($purchaseOrder->actual_exchange_rate)
+                            <div class="total-row"><span>Kurs realisasi{{ $purchaseOrder->actual_exchange_rate_date ? ' '.$purchaseOrder->actual_exchange_rate_date->format('d M Y') : '' }}</span><strong>Rp{{ number_format($purchaseOrder->actual_exchange_rate, 2, ',', '.') }}/{{ $purchaseOrder->currency_code }}</strong></div>
+                        @endif
+                    @endif
                 @endif
             </section>
 

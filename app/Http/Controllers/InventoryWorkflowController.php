@@ -38,6 +38,7 @@ use App\Models\VendorQuotation;
 use App\Services\AuditLogger;
 use App\Services\CampStockService;
 use App\Services\DocumentNumberService;
+use App\Services\ExchangeRateService;
 use App\Services\MasterDataTransferService;
 use App\Services\PurchaseOrderWorkflowService;
 use App\Services\PurchaseRequestWorkflowService;
@@ -63,6 +64,7 @@ class InventoryWorkflowController extends Controller
         private readonly SystemBackupService $systemBackupService,
         private readonly ReportService $reportService,
         private readonly MasterDataTransferService $masterDataTransferService,
+        private readonly ExchangeRateService $exchangeRateService,
     ) {}
 
     public function dashboard()
@@ -311,6 +313,31 @@ class InventoryWorkflowController extends Controller
         return $this->renderMenu('vendor-prices');
     }
 
+    public function latestExchangeRate(Request $request)
+    {
+        $user = auth()->user()?->loadMissing('role');
+        abort_unless(
+            $user?->hasPermission('vendor_prices.manage') || $user?->hasPermission('purchase_orders.manage'),
+            403
+        );
+        $data = $request->validate([
+            'currency' => ['required', 'string', Rule::in(array_keys($this->exchangeRateService->currencies()))],
+            'refresh' => ['nullable', 'boolean'],
+        ]);
+
+        try {
+            return response()->json($this->exchangeRateService->latest(
+                strtoupper($data['currency']),
+                (bool) ($data['refresh'] ?? false)
+            ));
+        } catch (\RuntimeException $exception) {
+            return response()->json([
+                'message' => $exception->getMessage(),
+                'manual_allowed' => true,
+            ], 503);
+        }
+    }
+
     public function reviewVendorPrice(PurchaseRequestItem $purchaseRequestItem)
     {
         $this->ensureCanViewVendorPricingWorkflow();
@@ -334,6 +361,9 @@ class InventoryWorkflowController extends Controller
             'vendors' => Vendor::orderBy('name')->get(),
             'canSeePrices' => auth()->user()?->canSeePrices() ?? false,
             'canManageVendorPrices' => auth()->user()?->hasPermission('vendor_prices.manage') ?? false,
+            'canOverrideExchangeRate' => auth()->user()?->hasPermission('exchange_rates.override') ?? false,
+            'currencies' => $this->exchangeRateService->currencies(),
+            'exchangeRateWarningThreshold' => (float) config('currencies.warning_threshold_percent', 2),
         ]);
     }
 
@@ -413,7 +443,10 @@ class InventoryWorkflowController extends Controller
         return view('inventory.purchase-order-form', [
             'purchaseRequests' => $purchaseRequests,
             'canSeePrices' => auth()->user()->canSeePrices(),
+            'canOverrideExchangeRate' => auth()->user()->hasPermission('exchange_rates.override'),
             'activeCompanyId' => $activeCompanyId,
+            'currencies' => $this->exchangeRateService->currencies(),
+            'exchangeRateWarningThreshold' => (float) config('currencies.warning_threshold_percent', 2),
         ]);
     }
 
@@ -3112,6 +3145,11 @@ class InventoryWorkflowController extends Controller
         $data = $request->validate([
             'vendor_id' => ['required_without:quotations', 'exists:vendors,id'],
             'unit_price' => ['required_without:quotations', 'numeric', 'gt:0'],
+            'currency_code' => ['nullable', 'string', Rule::in(array_keys($this->exchangeRateService->currencies()))],
+            'reference_exchange_rate' => ['nullable', 'numeric', 'gt:0'],
+            'exchange_rate' => ['nullable', 'numeric', 'gt:0'],
+            'exchange_rate_date' => ['nullable', 'date'],
+            'exchange_rate_override_reason' => ['nullable', 'string', 'max:1000'],
             'available_quantity' => ['required_without:quotations', 'integer', 'min:0'],
             'lead_time_days' => ['required_without:quotations', 'integer', 'min:0'],
             'notes' => ['nullable', 'string'],
@@ -3119,6 +3157,11 @@ class InventoryWorkflowController extends Controller
             'quotations.*.vendor_id' => ['nullable', 'exists:vendors,id'],
             'quotations.*.brand_name' => ['nullable', 'string', 'max:255'],
             'quotations.*.unit_price' => ['nullable', 'numeric', 'gt:0'],
+            'quotations.*.currency_code' => ['nullable', 'string', Rule::in(array_keys($this->exchangeRateService->currencies()))],
+            'quotations.*.reference_exchange_rate' => ['nullable', 'numeric', 'gt:0'],
+            'quotations.*.exchange_rate' => ['nullable', 'numeric', 'gt:0'],
+            'quotations.*.exchange_rate_date' => ['nullable', 'date'],
+            'quotations.*.exchange_rate_override_reason' => ['nullable', 'string', 'max:1000'],
             'quotations.*.available_quantity' => ['nullable', 'integer', 'min:0'],
             'quotations.*.lead_time_days' => ['nullable', 'integer', 'min:0'],
             'quotations.*.notes' => ['nullable', 'string'],
@@ -3129,10 +3172,16 @@ class InventoryWorkflowController extends Controller
             'brand_name' => null,
             'part_number' => null,
             'unit_price' => $data['unit_price'],
+            'currency_code' => $data['currency_code'] ?? 'IDR',
+            'reference_exchange_rate' => $data['reference_exchange_rate'] ?? null,
+            'exchange_rate' => $data['exchange_rate'] ?? null,
+            'exchange_rate_date' => $data['exchange_rate_date'] ?? null,
+            'exchange_rate_override_reason' => $data['exchange_rate_override_reason'] ?? null,
             'available_quantity' => $data['available_quantity'],
             'lead_time_days' => $data['lead_time_days'],
             'notes' => $data['notes'] ?? null,
-        ]])->filter(fn ($quotation) => ! empty($quotation['vendor_id']) && array_key_exists('unit_price', $quotation) && $quotation['unit_price'] !== null && $quotation['unit_price'] !== '');
+        ]])->filter(fn ($quotation) => ! empty($quotation['vendor_id']) && array_key_exists('unit_price', $quotation) && $quotation['unit_price'] !== null && $quotation['unit_price'] !== '')
+            ->map(fn ($quotation) => $this->normalizeQuotationCurrency($quotation));
 
         if ($quotations->isEmpty()) {
             return back()->with('error', 'Minimal satu harga vendor harus diisi.');
@@ -3156,6 +3205,12 @@ class InventoryWorkflowController extends Controller
                     'brand_name' => $quotation['brand_name'] ?? null,
                     'part_number' => $lockedItem->inventoryItem->sku,
                     'unit_price' => $quotation['unit_price'],
+                    'currency_code' => $quotation['currency_code'],
+                    'reference_exchange_rate' => $quotation['reference_exchange_rate'],
+                    'exchange_rate' => $quotation['exchange_rate'],
+                    'exchange_rate_date' => $quotation['exchange_rate_date'],
+                    'exchange_rate_source' => $quotation['exchange_rate_source'],
+                    'exchange_rate_override_reason' => $quotation['exchange_rate_override_reason'],
                     'available_quantity' => $quotation['available_quantity'] ?? 0,
                     'lead_time_days' => $quotation['lead_time_days'] ?? 0,
                     'notes' => $quotation['notes'] ?? null,
@@ -3219,7 +3274,7 @@ class InventoryWorkflowController extends Controller
             $lockedItem->quotations()->update(['is_selected' => false, 'selected_quantity' => 0]);
             $lockedQuotation->update(['is_selected' => true, 'selected_quantity' => $selectedQuantity]);
 
-            $finalTotal = (float) $lockedQuotation->unit_price * $selectedQuantity;
+            $finalTotal = $lockedQuotation->totalIdr($selectedQuantity);
             $requiresDirectorApproval = $finalTotal > 10000000;
 
             $lockedItem->update([
@@ -3407,7 +3462,7 @@ class InventoryWorkflowController extends Controller
             $purchaseRequestItem->quotations()
                 ->whereKey($quotationId)
                 ->update(['is_selected' => true, 'selected_quantity' => $quantity]);
-            $finalTotal += (float) $quotation->unit_price * $quantity;
+            $finalTotal += $quotation->totalIdr($quantity);
         }
 
         return $finalTotal;
@@ -3630,6 +3685,16 @@ class InventoryWorkflowController extends Controller
             'quotations.*' => ['nullable', 'integer', 'exists:vendor_quotations,id'],
             'unit_prices' => ['nullable', 'array'],
             'unit_prices.*' => ['nullable', 'numeric', 'min:0.01'],
+            'exchange_rates' => ['nullable', 'array'],
+            'exchange_rates.*' => ['nullable', 'numeric', 'gt:0'],
+            'reference_exchange_rates' => ['nullable', 'array'],
+            'reference_exchange_rates.*' => ['nullable', 'numeric', 'gt:0'],
+            'exchange_rate_dates' => ['nullable', 'array'],
+            'exchange_rate_dates.*' => ['nullable', 'date'],
+            'exchange_rate_sources' => ['nullable', 'array'],
+            'exchange_rate_sources.*' => ['nullable', 'in:frankfurter,BI,manual,system'],
+            'exchange_rate_override_reasons' => ['nullable', 'array'],
+            'exchange_rate_override_reasons.*' => ['nullable', 'string', 'max:1000'],
             'discount_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'ppn_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
         ]);
@@ -3772,7 +3837,7 @@ class InventoryWorkflowController extends Controller
             }
 
             $groupedItems = $preparedItems
-                ->groupBy(fn ($item) => $item['requestItem']->purchase_request_id . ':' . $item['quotation']->vendor_id)
+                ->groupBy(fn ($item) => $item['requestItem']->purchase_request_id . ':' . $item['quotation']->vendor_id . ':' . $item['quotation']->currency_code)
                 ->values();
             $vendorGroupCounts = $groupedItems->countBy(fn ($items) => $items->first()['requestItem']->purchase_request_id);
 
@@ -3781,6 +3846,11 @@ class InventoryWorkflowController extends Controller
                     $firstItem = $items->first();
                     $purchaseRequest = $firstItem['requestItem']->purchaseRequest;
                     $vendorId = $firstItem['quotation']->vendor_id;
+                    $currencySnapshot = $this->resolvePurchaseOrderCurrencySnapshot(
+                        (string) $firstItem['quotation']->currency_code,
+                        $data,
+                        $firstItem['quotation']
+                    );
                     $leadTimeDays = (int) $items->max(fn ($item) => $item['quotation']->lead_time_days);
                     $isRetryPurchaseOrder = $items->contains(fn ($item) => (bool) $item['requestItem']->source_credit_note_item_id);
                     $existingPoCount = PurchaseOrder::where('purchase_request_id', $purchaseRequest->id)
@@ -3814,6 +3884,12 @@ class InventoryWorkflowController extends Controller
                         'expected_at' => ($data['expected_at'] ?? null) ?: Carbon::parse($data['ordered_at'])->addDays($leadTimeDays)->toDateString(),
                         'delivery_destination' => $data['delivery_destination'] ?? 'warehouse',
                         'status' => 'draft',
+                        'currency_code' => $currencySnapshot['currency_code'],
+                        'reference_exchange_rate' => $currencySnapshot['reference_exchange_rate'],
+                        'exchange_rate' => $currencySnapshot['exchange_rate'],
+                        'exchange_rate_date' => $currencySnapshot['exchange_rate_date'],
+                        'exchange_rate_source' => $currencySnapshot['exchange_rate_source'],
+                        'exchange_rate_override_reason' => $currencySnapshot['exchange_rate_override_reason'],
                         'notes' => $data['notes'] ?? null,
                         'created_by' => auth()->id(),
                         'proposed_by' => $isPosting ? auth()->id() : null,
@@ -3834,6 +3910,8 @@ class InventoryWorkflowController extends Controller
                             'quantity_ordered' => $item['quantity'],
                             'uom' => $requestItem->uom ?? $requestItem->inventoryItem->uom,
                             'unit_price' => $item['unitPrice'],
+                            'currency_code' => $currencySnapshot['currency_code'],
+                            'exchange_rate' => $currencySnapshot['exchange_rate'],
                             'total' => $item['itemTotal'],
                         ]);
 
@@ -3901,10 +3979,15 @@ class InventoryWorkflowController extends Controller
             'unit_prices.*' => ['required', 'numeric', 'min:0.01'],
             'discount_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'ppn_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'actual_exchange_rate' => ['nullable', 'numeric', 'gt:0'],
+            'actual_exchange_rate_date' => ['nullable', 'date'],
         ]);
 
         if (! auth()->user()?->canSeePrices()) {
             unset($data['unit_prices'], $data['discount_percent'], $data['ppn_percent']);
+        }
+        if (! auth()->user()?->hasPermission('exchange_rates.override')) {
+            unset($data['actual_exchange_rate'], $data['actual_exchange_rate_date']);
         }
 
         DB::transaction(function () use ($data, $purchaseOrder) {
@@ -3923,6 +4006,8 @@ class InventoryWorkflowController extends Controller
                 'expected_at' => $data['expected_at'] ?? null,
                 'delivery_destination' => $data['delivery_destination'] ?? 'warehouse',
                 'notes' => $data['notes'] ?? null,
+                'actual_exchange_rate' => $data['actual_exchange_rate'] ?? $purchaseOrder->actual_exchange_rate,
+                'actual_exchange_rate_date' => $data['actual_exchange_rate_date'] ?? $purchaseOrder->actual_exchange_rate_date,
                 'checked_by' => null,
                 'checked_at' => null,
                 'approved_by' => null,
@@ -4344,6 +4429,9 @@ class InventoryWorkflowController extends Controller
                     'requested_by_name' => $data['received_by'],
                     'created_by_name' => $data['received_by'],
                     'status' => 'draft',
+                    'currency_code' => $purchaseOrder->currency_code ?? 'IDR',
+                    'exchange_rate' => $purchaseOrder->exchange_rate ?? 1,
+                    'exchange_rate_date' => $purchaseOrder->exchange_rate_date,
                     'notes' => 'Otomatis dibuat dari penerimaan ' . $receipt->number . '.',
                 ]);
 
@@ -4358,6 +4446,8 @@ class InventoryWorkflowController extends Controller
                         'issue_type' => $creditNoteItem['item']['condition'],
                         'resolution' => 'credit_refund',
                         'unit_price' => $purchaseOrderItem->unit_price,
+                        'currency_code' => $purchaseOrderItem->currency_code ?? 'IDR',
+                        'exchange_rate' => $purchaseOrderItem->exchange_rate ?? 1,
                         'total' => (float) $purchaseOrderItem->unit_price * $problemQuantity,
                         'notes' => $creditNoteItem['item']['notes'] ?? null,
                     ]);
@@ -4469,6 +4559,9 @@ class InventoryWorkflowController extends Controller
                 'requested_by_name' => $data['requested_by_name'],
                 'created_by_name' => auth()->user()?->name ?? $data['requested_by_name'],
                 'status' => 'draft',
+                'currency_code' => 'IDR',
+                'exchange_rate' => 1,
+                'exchange_rate_date' => now()->toDateString(),
                 'notes' => $data['notes'],
             ]);
 
@@ -4479,6 +4572,8 @@ class InventoryWorkflowController extends Controller
                 'issue_type' => $siteReceiptItem->condition,
                 'resolution' => 'credit_refund',
                 'unit_price' => 0,
+                'currency_code' => 'IDR',
+                'exchange_rate' => 1,
                 'total' => 0,
                 'notes' => $data['notes'],
             ]);
@@ -4528,6 +4623,9 @@ class InventoryWorkflowController extends Controller
                 'requested_by_name' => $data['requested_by_name'],
                 'created_by_name' => auth()->user()?->name ?? $data['requested_by_name'],
                 'status' => 'draft',
+                'currency_code' => 'IDR',
+                'exchange_rate' => 1,
+                'exchange_rate_date' => now()->toDateString(),
                 'notes' => $data['notes'],
             ]);
 
@@ -4537,6 +4635,8 @@ class InventoryWorkflowController extends Controller
                 'issue_type' => $data['issue_type'],
                 'resolution' => 'manual_credit',
                 'unit_price' => $data['unit_price'],
+                'currency_code' => 'IDR',
+                'exchange_rate' => 1,
                 'total' => (float) $data['unit_price'] * (int) $data['quantity_problem'],
                 'notes' => $data['notes'],
             ]);
@@ -5015,6 +5115,9 @@ class InventoryWorkflowController extends Controller
                     'requested_by_name' => $requestedBy,
                     'created_by_name' => $requestedBy,
                     'status' => 'draft',
+                    'currency_code' => $purchaseOrder?->currency_code ?? 'IDR',
+                    'exchange_rate' => $purchaseOrder?->exchange_rate ?? 1,
+                    'exchange_rate_date' => $purchaseOrder?->exchange_rate_date,
                     'notes' => 'Otomatis dibuat dari penerimaan site '.$receipt->number.'.',
                 ]);
 
@@ -5029,6 +5132,8 @@ class InventoryWorkflowController extends Controller
                         'issue_type' => $entry['item']['condition'],
                         'resolution' => 'credit_refund',
                         'unit_price' => $unitPrice,
+                        'currency_code' => $poItem?->currency_code ?? 'IDR',
+                        'exchange_rate' => $poItem?->exchange_rate ?? 1,
                         'total' => $unitPrice * $entry['problemQuantity'],
                         'notes' => $entry['item']['notes'] ?? null,
                     ]);
@@ -5466,7 +5571,7 @@ class InventoryWorkflowController extends Controller
 
         if ($selectionIsValid) {
             $finalTotal = (float) $selectedQuotations->sum(
-                fn ($quotation) => (float) $quotation->unit_price * (int) $quotation->selected_quantity
+                fn ($quotation) => $quotation->totalIdr((int) $quotation->selected_quantity)
             );
 
             $purchaseRequestItem->update([
@@ -5485,6 +5590,112 @@ class InventoryWorkflowController extends Controller
             'final_total' => 0,
             'director_approval_status' => 'not_required',
         ]);
+    }
+
+    private function normalizeQuotationCurrency(array $quotation): array
+    {
+        $currencyCode = strtoupper((string) ($quotation['currency_code'] ?? 'IDR'));
+        if (! array_key_exists($currencyCode, $this->exchangeRateService->currencies())) {
+            throw ValidationException::withMessages(['quotations' => 'Mata uang penawaran tidak didukung.']);
+        }
+
+        if ($currencyCode === 'IDR') {
+            return [
+                ...$quotation,
+                'currency_code' => 'IDR',
+                'reference_exchange_rate' => 1,
+                'exchange_rate' => 1,
+                'exchange_rate_date' => $quotation['exchange_rate_date'] ?? now()->toDateString(),
+                'exchange_rate_source' => 'system',
+                'exchange_rate_override_reason' => null,
+            ];
+        }
+
+        $referenceRate = (float) ($quotation['reference_exchange_rate'] ?? 0);
+        $appliedRate = (float) ($quotation['exchange_rate'] ?? 0);
+        if ($appliedRate <= 0) {
+            throw ValidationException::withMessages(['quotations' => 'Kurs untuk '.$currencyCode.' wajib diisi.']);
+        }
+
+        $isManual = $referenceRate <= 0 || $this->exchangeRatesDiffer($appliedRate, $referenceRate);
+        $reason = trim((string) ($quotation['exchange_rate_override_reason'] ?? ''));
+        if ($isManual && ! auth()->user()?->hasPermission('exchange_rates.override')) {
+            throw ValidationException::withMessages([
+                'quotations' => 'Anda tidak memiliki hak untuk mengubah kurs secara manual.',
+            ]);
+        }
+        if ($isManual && $reason === '') {
+            throw ValidationException::withMessages([
+                'quotations' => 'Alasan perubahan atau input kurs manual '.$currencyCode.' wajib diisi.',
+            ]);
+        }
+
+        return [
+            ...$quotation,
+            'currency_code' => $currencyCode,
+            'reference_exchange_rate' => $referenceRate > 0 ? $referenceRate : $appliedRate,
+            'exchange_rate' => $appliedRate,
+            'exchange_rate_date' => $quotation['exchange_rate_date'] ?? now()->toDateString(),
+            'exchange_rate_source' => $isManual ? 'manual' : 'frankfurter',
+            'exchange_rate_override_reason' => $isManual ? $reason : null,
+        ];
+    }
+
+    private function resolvePurchaseOrderCurrencySnapshot(string $currencyCode, array $data, VendorQuotation $quotation): array
+    {
+        $currencyCode = strtoupper($currencyCode ?: 'IDR');
+        if ($currencyCode === 'IDR') {
+            return [
+                'currency_code' => 'IDR',
+                'reference_exchange_rate' => 1,
+                'exchange_rate' => 1,
+                'exchange_rate_date' => $data['exchange_rate_dates']['IDR'] ?? now()->toDateString(),
+                'exchange_rate_source' => 'system',
+                'exchange_rate_override_reason' => null,
+            ];
+        }
+
+        $referenceRate = (float) ($data['reference_exchange_rates'][$currencyCode] ?? $quotation->reference_exchange_rate ?? 0);
+        $appliedRate = (float) ($data['exchange_rates'][$currencyCode] ?? $quotation->exchange_rate ?? 0);
+        if ($appliedRate <= 0) {
+            throw ValidationException::withMessages([
+                'exchange_rates' => 'Kurs '.$currencyCode.' wajib diisi sebelum PO dibuat.',
+            ]);
+        }
+
+        $submittedSource = (string) ($data['exchange_rate_sources'][$currencyCode] ?? $quotation->exchange_rate_source ?? 'frankfurter');
+        $isManual = $submittedSource === 'manual' || $referenceRate <= 0 || $this->exchangeRatesDiffer($appliedRate, $referenceRate);
+        $reason = trim((string) ($data['exchange_rate_override_reasons'][$currencyCode] ?? $quotation->exchange_rate_override_reason ?? ''));
+        $usesExistingManualSnapshot = $quotation->exchange_rate_source === 'manual'
+            && $submittedSource === 'manual'
+            && ! $this->exchangeRatesDiffer($appliedRate, (float) $quotation->exchange_rate)
+            && ! $this->exchangeRatesDiffer($referenceRate, (float) $quotation->reference_exchange_rate);
+        if ($isManual && ! $usesExistingManualSnapshot && ! auth()->user()?->hasPermission('exchange_rates.override')) {
+            throw ValidationException::withMessages([
+                'exchange_rates' => 'Anda tidak memiliki hak untuk mengubah kurs PO secara manual.',
+            ]);
+        }
+        if ($isManual && $reason === '') {
+            throw ValidationException::withMessages([
+                'exchange_rate_override_reasons' => 'Alasan perubahan kurs '.$currencyCode.' wajib diisi.',
+            ]);
+        }
+
+        return [
+            'currency_code' => $currencyCode,
+            'reference_exchange_rate' => $referenceRate > 0 ? $referenceRate : $appliedRate,
+            'exchange_rate' => $appliedRate,
+            'exchange_rate_date' => $data['exchange_rate_dates'][$currencyCode]
+                ?? optional($quotation->exchange_rate_date)->toDateString()
+                ?? now()->toDateString(),
+            'exchange_rate_source' => $isManual ? 'manual' : ($submittedSource === 'BI' ? 'BI' : 'frankfurter'),
+            'exchange_rate_override_reason' => $isManual ? $reason : null,
+        ];
+    }
+
+    private function exchangeRatesDiffer(float $first, float $second): bool
+    {
+        return number_format($first, 4, '.', '') !== number_format($second, 4, '.', '');
     }
 
     private function quotationStatus(PurchaseRequestItem $purchaseRequestItem, float $finalTotal): string

@@ -53,6 +53,14 @@
         .item-name { font-weight:800; }
         .spec { margin-top:2px; color:var(--muted); font-size:12px; }
         .price { font-variant-numeric:tabular-nums; white-space:nowrap; }
+        .rate-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; margin-top:12px; }
+        .rate-card { padding:14px; border:1px solid var(--line); border-radius:7px; background:#fbfdfe; display:grid; gap:10px; }
+        .rate-card-head { display:flex; justify-content:space-between; gap:10px; align-items:center; }
+        .rate-fields { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px; }
+        .rate-status { color:var(--muted); font-size:12px; font-weight:700; }
+        .rate-status.warning { color:#8a5a00; }
+        .original-price { display:block; font-weight:900; }
+        .idr-equivalent { display:block; color:var(--muted); font-size:11px; margin-top:2px; }
         .summary { position:sticky; bottom:0; z-index:20; display:flex; align-items:center; justify-content:space-between; gap:16px; border-top:4px solid var(--accent); }
         .summary strong { color:var(--navy); font-size:18px; }
         .actions { display:flex; gap:9px; justify-content:flex-end; flex-wrap:wrap; }
@@ -60,7 +68,7 @@
         @media (max-width:860px) {
             .page { width:calc(100% - 20px); padding-top:10px; }
             .topbar, .request-head, .vendor-head, .summary { align-items:flex-start; flex-direction:column; }
-            .form-grid, .flow { grid-template-columns:1fr; }
+            .form-grid, .flow, .rate-grid, .rate-fields { grid-template-columns:1fr; }
             .full { grid-column:auto; }
             .actions, .actions .button, .actions button { width:100%; }
         }
@@ -90,6 +98,12 @@
 <body>
 @php
     $companyQuery = ! empty($activeCompanyId) ? ['company_id' => $activeCompanyId] : [];
+    $foreignCurrencySnapshots = $purchaseRequests
+        ->flatMap->items
+        ->flatMap->selectedQuotations
+        ->where('currency_code', '!=', 'IDR')
+        ->groupBy('currency_code')
+        ->map->first();
 @endphp
 <main class="page">
     <header class="topbar">
@@ -142,6 +156,38 @@
             </div>
         </section>
 
+        @if ($foreignCurrencySnapshots->isNotEmpty() && $canSeePrices)
+            <section>
+                <h2>Kurs PO</h2>
+                <p>Kurs terbaru diperiksa saat halaman dibuka dan dikunci ketika PO dibuat.</p>
+                <div class="rate-grid">
+                    @foreach ($foreignCurrencySnapshots as $currencyCode => $snapshot)
+                        <div class="rate-card" data-po-rate-card data-currency="{{ $currencyCode }}">
+                            <div class="rate-card-head">
+                                <strong>{{ $currencyCode }} - {{ $currencies[$currencyCode] ?? $currencyCode }}</strong>
+                                <button type="button" class="ghost" data-refresh-rate>Perbarui Kurs Referensi</button>
+                            </div>
+                            <div class="rate-fields">
+                                <label>Kurs referensi
+                                    <input value="{{ number_format((float) $snapshot->reference_exchange_rate, 4, '.', '') }}" readonly data-reference-rate-display>
+                                    <input name="reference_exchange_rates[{{ $currencyCode }}]" type="hidden" value="{{ old('reference_exchange_rates.'.$currencyCode, $snapshot->reference_exchange_rate) }}" data-reference-rate>
+                                </label>
+                                <label>Kurs digunakan
+                                    <input name="exchange_rates[{{ $currencyCode }}]" type="number" min="0.0001" step="0.0001" value="{{ number_format((float) old('exchange_rates.'.$currencyCode, $snapshot->exchange_rate), 4, '.', '') }}" required data-applied-rate @readonly(! $canOverrideExchangeRate)>
+                                </label>
+                                <input name="exchange_rate_dates[{{ $currencyCode }}]" type="hidden" value="{{ old('exchange_rate_dates.'.$currencyCode, optional($snapshot->exchange_rate_date)->toDateString() ?? now()->toDateString()) }}" data-rate-date>
+                                <input name="exchange_rate_sources[{{ $currencyCode }}]" type="hidden" value="{{ old('exchange_rate_sources.'.$currencyCode, $snapshot->exchange_rate_source ?? 'frankfurter') }}" data-rate-source>
+                                <label class="full">Alasan perubahan kurs
+                                    <input name="exchange_rate_override_reasons[{{ $currencyCode }}]" value="{{ old('exchange_rate_override_reasons.'.$currencyCode, $snapshot->exchange_rate_override_reason) }}" placeholder="{{ $canOverrideExchangeRate ? 'Wajib jika kurs referensi diubah' : 'Khusus Purchasing / Administrator' }}" data-rate-reason @readonly(! $canOverrideExchangeRate)>
+                                </label>
+                            </div>
+                            <div class="rate-status" data-rate-status>Kurs penawaran tersimpan.</div>
+                        </div>
+                    @endforeach
+                </div>
+            </section>
+        @endif
+
         <section>
             <h2>Barang Siap Dibuatkan PO</h2>
             @forelse ($purchaseRequests as $purchaseRequest)
@@ -161,16 +207,19 @@
                         </div>
                         <strong>{{ $poLines->count() }} alokasi siap PO</strong>
                     </div>
-                    @foreach ($poLines->groupBy(fn ($line) => $line['quotation']->vendor?->name ?? 'Vendor belum dipilih') as $vendorName => $vendorLines)
+                    @foreach ($poLines->groupBy(fn ($line) => ($line['quotation']->vendor_id ?? 0).':'.$line['quotation']->currency_code) as $vendorCurrencyKey => $vendorLines)
                         @php
                             $vendor = $vendorLines->first()['quotation']->vendor;
-                            $groupKey = 'vendor-group-'.$purchaseRequest->id.'-'.$loop->index;
+                            $vendorName = $vendor?->name ?? 'Vendor belum dipilih';
+                            $currencyCode = $vendorLines->first()['quotation']->currency_code ?? 'IDR';
+                            $groupKey = 'vendor-group-'.$purchaseRequest->id.'-'.$vendorCurrencyKey;
                         @endphp
                         <div class="vendor-group" data-vendor-group="{{ $groupKey }}">
                             <div class="vendor-head">
                                 <div class="vendor-title">
                                     <span class="pill ok">Vendor final</span>
                                     <strong>{{ $vendorName }}</strong>
+                                    <span class="pill">{{ $currencyCode }}</span>
                                     <span class="pill">{{ $vendorLines->count() }} alokasi</span>
                                 </div>
                                 <button type="button" class="ghost" data-select-group="{{ $groupKey }}">Pilih semua vendor ini</button>
@@ -195,6 +244,7 @@
                                             $quotation = $line['quotation'];
                                             $allocatedQuantity = (int) ($quotation->selected_quantity ?: $item->approvedQuantity());
                                             $rowTotal = (float) $quotation->unit_price * $allocatedQuantity;
+                                            $rowTotalIdr = $quotation->totalIdr($allocatedQuantity);
                                         @endphp
                                         <tr data-item-row>
                                             <td>
@@ -209,8 +259,14 @@
                                             <td>{{ $quotation?->brand_name ?: '-' }}<div class="spec">{{ $quotation?->part_number ?: 'No part belum diisi' }}</div></td>
                                             <td>{{ $quotation?->lead_time_days ?? 0 }} hari</td>
                                             @if ($canSeePrices)
-                                                <td class="price"><input type="number" name="unit_prices[{{ $quotation->id }}]" value="{{ old('unit_prices.'.$quotation->id, number_format((float) $quotation->unit_price, 2, '.', '')) }}" min="0.01" step="0.01" data-unit-price data-quantity="{{ $allocatedQuantity }}" aria-label="Harga satuan {{ $item->inventoryItem->name }}"></td>
-                                                <td><strong data-row-total data-total="{{ $rowTotal }}">Rp0</strong></td>
+                                                <td class="price">
+                                                    <span class="original-price">{{ $currencyCode }}</span>
+                                                    <input type="number" name="unit_prices[{{ $quotation->id }}]" value="{{ old('unit_prices.'.$quotation->id, number_format((float) $quotation->unit_price, 2, '.', '')) }}" min="0.01" step="0.01" data-unit-price data-quantity="{{ $allocatedQuantity }}" data-currency="{{ $currencyCode }}" aria-label="Harga satuan {{ $item->inventoryItem->name }}">
+                                                </td>
+                                                <td>
+                                                    <strong data-row-total data-total="{{ $rowTotal }}" data-currency="{{ $currencyCode }}">{{ \App\Support\Currency::format(0, $currencyCode) }}</strong>
+                                                    @if ($currencyCode !== 'IDR')<span class="idr-equivalent" data-row-total-idr data-total-idr="{{ $rowTotalIdr }}">≈ Rp0</span>@endif
+                                                </td>
                                             @endif
                                         </tr>
                                     @endforeach
@@ -245,6 +301,65 @@
     const form = document.querySelector('[data-po-form]');
     const currency = new Intl.NumberFormat('id-ID');
     const canSeePrices = {{ $canSeePrices ? 'true' : 'false' }};
+    const exchangeRateUrl = @json(route('exchange-rates.latest'));
+    const exchangeRateWarningThreshold = {{ $exchangeRateWarningThreshold }};
+    const ratesDiffer = (first, second) => Number(first).toFixed(4) !== Number(second).toFixed(4);
+
+    function formatOriginal(amount, currencyCode) {
+        const decimals = currencyCode === 'IDR' ? 0 : 2;
+        const prefix = currencyCode === 'IDR' ? 'Rp' : `${currencyCode} `;
+        return `${prefix}${new Intl.NumberFormat('id-ID', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(amount)}`;
+    }
+
+    function rateFor(currencyCode) {
+        if (currencyCode === 'IDR') return 1;
+        return Number(form.querySelector(`[data-po-rate-card][data-currency="${currencyCode}"] [data-applied-rate]`)?.value || 0);
+    }
+
+    function syncRateCard(card) {
+        const referenceRate = Number(card.querySelector('[data-reference-rate]').value || 0);
+        const appliedRate = Number(card.querySelector('[data-applied-rate]').value || 0);
+        const rateSource = card.querySelector('[data-rate-source]').value;
+        const reason = card.querySelector('[data-rate-reason]');
+        const status = card.querySelector('[data-rate-status]');
+        const deviation = referenceRate > 0 ? Math.abs(appliedRate - referenceRate) / referenceRate * 100 : 0;
+        const manual = rateSource === 'manual' || referenceRate <= 0 || ratesDiffer(appliedRate, referenceRate);
+
+        reason.required = manual;
+        status.classList.toggle('warning', deviation > exchangeRateWarningThreshold);
+        status.textContent = manual
+            ? `Kurs manual${deviation > exchangeRateWarningThreshold ? ` · peringatan selisih ${deviation.toFixed(2)}%` : ''}`
+            : `Menggunakan kurs referensi ${rateSource} ${card.querySelector('[data-rate-date]').value}${card.dataset.rateStale === '1' ? ' (kurs terakhir)' : ''}`;
+        refreshSummary();
+    }
+
+    async function loadLatestRate(card, refresh = false) {
+        const currencyCode = card.dataset.currency;
+        const status = card.querySelector('[data-rate-status]');
+        status.textContent = 'Mengambil kurs referensi Frankfurter terbaru...';
+        try {
+            const url = new URL(exchangeRateUrl, window.location.origin);
+            url.searchParams.set('currency', currencyCode);
+            if (refresh) url.searchParams.set('refresh', '1');
+            const response = await fetch(url, { headers: { Accept: 'application/json' } });
+            const data = await response.json();
+            if (! response.ok) throw new Error(data.message || 'Kurs referensi tidak tersedia.');
+
+            const value = Number(data.rate).toFixed(4);
+            card.querySelector('[data-reference-rate]').value = value;
+            card.querySelector('[data-reference-rate-display]').value = value;
+            card.querySelector('[data-applied-rate]').value = value;
+            card.querySelector('[data-rate-date]').value = data.date;
+            card.querySelector('[data-rate-source]').value = data.source || 'frankfurter';
+            card.querySelector('[data-rate-reason]').value = '';
+            card.dataset.rateStale = data.stale ? '1' : '0';
+            syncRateCard(card);
+        } catch (error) {
+            status.textContent = `${error.message} Kurs penawaran tersimpan tetap digunakan atau dapat diubah manual.`;
+            status.classList.add('warning');
+            refreshSummary();
+        }
+    }
 
     function refreshSummary() {
         let count = 0;
@@ -258,14 +373,18 @@
             const rowTotal = priceInput
                 ? Number(priceInput.value || 0) * Number(priceInput.dataset.quantity || 0)
                 : Number(totalLabel?.dataset.total || 0);
+            const currencyCode = priceInput?.dataset.currency || totalLabel?.dataset.currency || 'IDR';
+            const rowTotalIdr = rowTotal * rateFor(currencyCode);
 
             row.classList.toggle('selected', check.checked);
             if (totalLabel) {
-                totalLabel.textContent = check.checked ? `Rp${currency.format(rowTotal)}` : 'Rp0';
+                totalLabel.textContent = check.checked ? formatOriginal(rowTotal, currencyCode) : formatOriginal(0, currencyCode);
+                const idrLabel = row.querySelector('[data-row-total-idr]');
+                if (idrLabel) idrLabel.textContent = check.checked ? `≈ Rp${currency.format(rowTotalIdr)}` : '≈ Rp0';
             }
             if (check.checked) {
                 count++;
-                total += rowTotal;
+                total += rowTotalIdr;
                 selectedPoGroups.add(check.dataset.poGroup);
             }
         });
@@ -309,7 +428,14 @@
         refreshSummary();
     });
     form?.addEventListener('input', (event) => {
-        if (event.target.matches('[data-unit-price], [data-discount-percent], [data-ppn-percent]')) {
+        if (event.target.matches('[data-unit-price], [data-discount-percent], [data-ppn-percent], [data-applied-rate]')) {
+            const rateCard = event.target.closest('[data-po-rate-card]');
+            if (rateCard) {
+                if (event.target.matches('[data-applied-rate]')) {
+                    rateCard.querySelector('[data-rate-source]').value = 'manual';
+                }
+                syncRateCard(rateCard);
+            }
             refreshSummary();
         }
     });
@@ -344,6 +470,10 @@
         }
     });
     form?.querySelectorAll('[data-item-check]:checked').forEach((check) => setItemAllocations(check.dataset.allocationItem, true));
+    form?.querySelectorAll('[data-po-rate-card]').forEach((card) => {
+        card.querySelector('[data-refresh-rate]')?.addEventListener('click', () => loadLatestRate(card, true));
+        loadLatestRate(card);
+    });
     refreshSummary();
 </script>
 </body>

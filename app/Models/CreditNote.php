@@ -14,6 +14,8 @@ class CreditNote extends Model
     protected $casts = [
         'credit_note_date' => 'date',
         'stock_deducted_at' => 'datetime',
+        'exchange_rate' => 'decimal:6',
+        'exchange_rate_date' => 'date',
     ];
 
     public function purchaseOrder()

@@ -116,23 +116,34 @@
         form { display: grid; gap: 12px; }
         .vendor-row {
             display: grid;
-            grid-template-columns:
-                minmax(160px, 1.2fr)
-                minmax(140px, 1fr)
-                minmax(140px, 1fr)
-                minmax(110px, .9fr)
-                minmax(110px, .85fr)
-                minmax(100px, .8fr)
-                minmax(160px, 1.1fr)
-                168px;
-            gap: 8px;
-            align-items: end;
-            padding: 10px;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 12px;
+            align-items: start;
+            padding: 14px;
             border: 1px solid var(--line);
             border-radius: 8px;
             background: #fbfdfe;
         }
-        .vendor-row > button { width: 100%; }
+        .vendor-row > button { width: 100%; align-self: end; }
+        .vendor-notes { grid-column: span 2; }
+        .rate-meta {
+            grid-column: 1 / -1;
+            min-height: 42px;
+            display: flex;
+            align-items: center;
+            padding: 10px 12px;
+            border: 1px solid #b9dcda;
+            border-left: 4px solid var(--teal);
+            border-radius: 6px;
+            background: #eef8f7;
+            color: #315c5a;
+            font-size: 12px;
+            font-weight: 800;
+            line-height: 1.45;
+        }
+        .rate-warning { border-color: #efd090; border-left-color: var(--amber); background: #fff8e9; color: #7a5200; }
+        .original-price { display: block; font-weight: 900; }
+        .idr-equivalent { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
         label { display: grid; gap: 6px; color: #445666; font-size: 12px; font-weight: 800; }
         input, select {
             min-height: 38px;
@@ -157,6 +168,7 @@
             font-weight: 800;
         }
         input:focus, select:focus { outline: 0; border-color: var(--teal); box-shadow: 0 0 0 3px rgba(8,127,120,.12); }
+        input[readonly] { background: #f1f5f7; color: #607383; }
         button:focus-visible, .button:focus-visible { outline: 3px solid rgba(8,127,120,.2); outline-offset: 2px; }
         .notice { margin-top: 14px; padding: 12px 14px; border-radius: 8px; border: 1px solid var(--line); background: #fff; box-shadow: var(--shadow); font-weight: 800; }
         .success { border-color: #9bd8c2; color: var(--green); background: #f0fbf6; }
@@ -178,6 +190,7 @@
         .is-hidden { display: none !important; }
         @media (max-width: 1220px) {
             .vendor-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .vendor-action { grid-column: span 2; }
         }
         @media (max-width: 1050px) {
             .grid, .stat-grid, .signature-grid { grid-template-columns: 1fr; }
@@ -187,6 +200,8 @@
         @media (max-width: 680px) {
             .topbar, .panel-head { flex-direction: column; }
             .vendor-row { grid-template-columns: 1fr; }
+            .vendor-notes { grid-column: auto; }
+            .vendor-action { grid-column: auto; }
         }
 
         /* Review polish */
@@ -247,16 +262,14 @@
 <body>
 @php
     $purchaseRequest = $requestItem->purchaseRequest;
-    $rankedQuotations = $requestItem->quotations->sortBy([
-        ['unit_price', 'asc'],
-        ['available_quantity', 'desc'],
-        ['lead_time_days', 'asc'],
-    ])->values();
+    $rankedQuotations = $requestItem->quotations
+        ->sortBy(fn ($quotation) => sprintf('%020.4f:%010d:%010d', $quotation->unitPriceIdr(), 999999999 - $quotation->available_quantity, $quotation->lead_time_days))
+        ->values();
     $recommendedQuotation = $rankedQuotations->first(fn ($quotation) => $quotation->available_quantity >= $requestItem->quantity);
     $selectedQuotations = $requestItem->selectedQuotations;
     $selectedQuotation = $requestItem->selectedQuotation;
     $selectedQuantity = (int) $selectedQuotations->sum('selected_quantity');
-    $selectedTotal = $selectedQuotations->sum(fn ($quotation) => $quotation->unit_price * $quotation->selected_quantity);
+    $selectedTotal = $selectedQuotations->sum(fn ($quotation) => $quotation->totalIdr());
     $selectedVendorNames = $selectedQuotations->pluck('vendor.name')->filter()->unique()->values()->implode(', ');
     $procurementStatus = $requestItem->procurement_approval_status ?? 'not_required';
     $procurementStatusLabel = match ($procurementStatus) {
@@ -442,11 +455,21 @@
                             </label>
                             <label>Merek <input name="quotations[0][brand_name]" placeholder="Contoh: Sakura"></label>
                             <label>No Part <span class="readonly-value">{{ $requestItem->inventoryItem->sku }}</span></label>
-                            <label>Harga <input name="quotations[0][unit_price]" type="number" min="1" required placeholder="0"></label>
-                            <label>Stok Vendor <input name="quotations[0][available_quantity]" type="number" min="0" required placeholder="0"></label>
-                            <label>Lead Time <input name="quotations[0][lead_time_days]" type="number" min="0" value="0"></label>
-                            <label>Catatan <input name="quotations[0][notes]" placeholder="Garansi, indent, dsb"></label>
-                            <button type="button" class="ghost" data-add-vendor>+ Tambah Vendor</button>
+                            <label>Mata Uang
+                                <select name="quotations[0][currency_code]" data-currency required>
+                                    @foreach ($currencies as $code => $name)<option value="{{ $code }}">{{ $code }} - {{ $name }}</option>@endforeach
+                                </select>
+                            </label>
+                            <label>Harga Penawaran <input name="quotations[0][unit_price]" type="number" min="0.01" step="0.01" required placeholder="0" data-original-price></label>
+                            <label>Kurs Digunakan (IDR) <input name="quotations[0][exchange_rate]" type="number" min="0.0001" step="0.0001" value="1.0000" required data-exchange-rate @readonly(! $canOverrideExchangeRate)></label>
+                            <input name="quotations[0][reference_exchange_rate]" type="hidden" value="1" data-reference-rate>
+                            <input name="quotations[0][exchange_rate_date]" type="hidden" value="{{ now()->toDateString() }}" data-rate-date>
+                            <label>Alasan Kurs Manual <input name="quotations[0][exchange_rate_override_reason]" placeholder="{{ $canOverrideExchangeRate ? 'Hanya jika kurs diubah' : 'Khusus Purchasing / Administrator' }}" data-rate-reason @readonly(! $canOverrideExchangeRate)></label>
+                            <label>Stok Tersedia <input name="quotations[0][available_quantity]" type="number" min="0" required placeholder="0"></label>
+                            <label>Lead Time (hari) <input name="quotations[0][lead_time_days]" type="number" min="0" value="0"></label>
+                            <label class="vendor-notes">Catatan <input name="quotations[0][notes]" placeholder="Garansi, indent, atau ketentuan vendor"></label>
+                            <button type="button" class="ghost vendor-action" data-add-vendor>+ Tambah Vendor</button>
+                            <div class="rate-meta" data-rate-status role="status">IDR tidak memerlukan konversi kurs.</div>
                         </div>
                     </div>
                     <template data-vendor-template>
@@ -461,11 +484,21 @@
                             </label>
                             <label>Merek <input name="quotations[__INDEX__][brand_name]" placeholder="Contoh: Sakura"></label>
                             <label>No Part <span class="readonly-value">{{ $requestItem->inventoryItem->sku }}</span></label>
-                            <label>Harga <input name="quotations[__INDEX__][unit_price]" type="number" min="1" required placeholder="0"></label>
-                            <label>Stok Vendor <input name="quotations[__INDEX__][available_quantity]" type="number" min="0" required placeholder="0"></label>
-                            <label>Lead Time <input name="quotations[__INDEX__][lead_time_days]" type="number" min="0" value="0"></label>
-                            <label>Catatan <input name="quotations[__INDEX__][notes]" placeholder="Garansi, indent, dsb"></label>
-                            <button type="button" class="ghost" data-remove-vendor>Hapus</button>
+                            <label>Mata Uang
+                                <select name="quotations[__INDEX__][currency_code]" data-currency required>
+                                    @foreach ($currencies as $code => $name)<option value="{{ $code }}">{{ $code }} - {{ $name }}</option>@endforeach
+                                </select>
+                            </label>
+                            <label>Harga Penawaran <input name="quotations[__INDEX__][unit_price]" type="number" min="0.01" step="0.01" required placeholder="0" data-original-price></label>
+                            <label>Kurs Digunakan (IDR) <input name="quotations[__INDEX__][exchange_rate]" type="number" min="0.0001" step="0.0001" value="1.0000" required data-exchange-rate @readonly(! $canOverrideExchangeRate)></label>
+                            <input name="quotations[__INDEX__][reference_exchange_rate]" type="hidden" value="1" data-reference-rate>
+                            <input name="quotations[__INDEX__][exchange_rate_date]" type="hidden" value="{{ now()->toDateString() }}" data-rate-date>
+                            <label>Alasan Kurs Manual <input name="quotations[__INDEX__][exchange_rate_override_reason]" placeholder="{{ $canOverrideExchangeRate ? 'Hanya jika kurs diubah' : 'Khusus Purchasing / Administrator' }}" data-rate-reason @readonly(! $canOverrideExchangeRate)></label>
+                            <label>Stok Tersedia <input name="quotations[__INDEX__][available_quantity]" type="number" min="0" required placeholder="0"></label>
+                            <label>Lead Time (hari) <input name="quotations[__INDEX__][lead_time_days]" type="number" min="0" value="0"></label>
+                            <label class="vendor-notes">Catatan <input name="quotations[__INDEX__][notes]" placeholder="Garansi, indent, atau ketentuan vendor"></label>
+                            <button type="button" class="ghost vendor-action" data-remove-vendor>Hapus</button>
+                            <div class="rate-meta" data-rate-status role="status">IDR tidak memerlukan konversi kurs.</div>
                         </div>
                     </template>
                     <div class="actions">
@@ -506,24 +539,38 @@
                     @php
                         $allocatedQuantity = (int) $quotation->selected_quantity;
                         $hasEnoughStock = $quotation->available_quantity >= max(1, $allocatedQuantity);
-                        $quotationTotal = $quotation->unit_price * ($allocatedQuantity ?: $requestItem->quantity);
+                        $displayQuantity = $allocatedQuantity ?: $requestItem->quantity;
+                        $quotationTotal = $quotation->unit_price * $displayQuantity;
+                        $quotationTotalIdr = $quotation->totalIdr($displayQuantity);
                     @endphp
                     <tr>
                         <td>#{{ $loop->iteration }}</td>
                         <td>{{ $quotation->vendor->name }}</td>
                         <td>{{ $quotation->brand_name ?: '-' }}<br><span class="muted">{{ $quotation->part_number ?: $requestItem->inventoryItem->sku }}</span></td>
-                        <td class="price">{{ $canSeePrices ? 'Rp'.number_format($quotation->unit_price, 0, ',', '.') : 'Disembunyikan' }}</td>
+                        <td class="price">
+                            @if ($canSeePrices)
+                                <span class="original-price">{{ \App\Support\Currency::format($quotation->unit_price, $quotation->currency_code) }}</span>
+                                @if ($quotation->currency_code !== 'IDR')
+                                    <span class="idr-equivalent">≈ {{ \App\Support\Currency::format($quotation->unitPriceIdr()) }} · kurs {{ number_format($quotation->exchange_rate, 2, ',', '.') }}</span>
+                                @endif
+                            @else Disembunyikan @endif
+                        </td>
                         <td><span class="pill {{ $quotation->available_quantity > 0 ? 'ok' : 'bad' }}">{{ $quotation->available_quantity }} {{ $requestItem->uom ?? $requestItem->inventoryItem->uom }}</span></td>
                         <td>{{ $quotation->lead_time_days }} hari</td>
                         <td>
                             @if ($canChooseVendor)
-                                <input name="allocations[{{ $quotation->id }}]" type="hidden" value="{{ old('allocations.'.$quotation->id, $allocatedQuantity) }}" data-allocation-input data-initial-value="{{ $allocatedQuantity }}" data-price="{{ $quotation->unit_price }}" data-uom="{{ $requestItem->uom ?? $requestItem->inventoryItem->uom }}">
+                                <input name="allocations[{{ $quotation->id }}]" type="hidden" value="{{ old('allocations.'.$quotation->id, $allocatedQuantity) }}" data-allocation-input data-initial-value="{{ $allocatedQuantity }}" data-price="{{ $quotation->unitPriceIdr() }}" data-uom="{{ $requestItem->uom ?? $requestItem->inventoryItem->uom }}">
                                 <span class="qty-display" data-allocation-display>{{ $allocatedQuantity > 0 ? $allocatedQuantity.' '.($requestItem->uom ?? $requestItem->inventoryItem->uom) : '-' }}</span>
                             @else
                                 {{ $allocatedQuantity ?: '-' }}
                             @endif
                         </td>
-                        <td class="price">{{ $canSeePrices ? 'Rp'.number_format($quotationTotal, 0, ',', '.') : 'Disembunyikan' }}</td>
+                        <td class="price">
+                            @if ($canSeePrices)
+                                <span class="original-price">{{ \App\Support\Currency::format($quotationTotal, $quotation->currency_code) }}</span>
+                                @if ($quotation->currency_code !== 'IDR')<span class="idr-equivalent">≈ {{ \App\Support\Currency::format($quotationTotalIdr) }}</span>@endif
+                            @else Disembunyikan @endif
+                        </td>
                         <td>
                             @if ($quotation->is_selected)
                                 <span class="pill ok">Dipilih {{ $allocatedQuantity }} {{ $requestItem->uom ?? $requestItem->inventoryItem->uom }}</span>
@@ -621,6 +668,127 @@
 </main>
 @include('inventory.components.confirm-submit')
 <script>
+    const exchangeRateUrl = @json(route('exchange-rates.latest'));
+    const exchangeRateWarningThreshold = {{ $exchangeRateWarningThreshold }};
+    const canOverrideExchangeRate = @json($canOverrideExchangeRate);
+    const idrFormatter = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 });
+    const rateFormatter = new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+    const originalPriceFormatter = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 });
+    const ratesDiffer = (first, second) => Number(first).toFixed(4) !== Number(second).toFixed(4);
+
+    const formatRateDate = (value) => {
+        if (! value) return '-';
+        return new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+            .format(new Date(`${value}T00:00:00`));
+    };
+
+    const syncCurrencyRow = (row) => {
+        const currency = row.querySelector('[data-currency]')?.value || 'IDR';
+        const price = Number(row.querySelector('[data-original-price]')?.value || 0);
+        const rateInput = row.querySelector('[data-exchange-rate]');
+        const referenceRate = Number(row.querySelector('[data-reference-rate]')?.value || 0);
+        const appliedRate = Number(rateInput?.value || 0);
+        const reason = row.querySelector('[data-rate-reason]');
+        const status = row.querySelector('[data-rate-status]');
+        const manual = currency !== 'IDR' && (referenceRate <= 0 || ratesDiffer(appliedRate, referenceRate));
+        const deviation = referenceRate > 0 ? Math.abs(appliedRate - referenceRate) / referenceRate * 100 : 0;
+
+        reason.required = manual;
+        reason.readOnly = ! canOverrideExchangeRate || ! manual;
+        reason.placeholder = manual
+            ? (canOverrideExchangeRate ? 'Jelaskan alasan penggunaan kurs manual' : 'Khusus Purchasing / Administrator')
+            : 'Tidak diperlukan untuk kurs referensi';
+        if (row.dataset.rateError && appliedRate <= 0) {
+            status.textContent = canOverrideExchangeRate
+                ? `${row.dataset.rateError} Isi kurs manual dan alasan wajib.`
+                : `${row.dataset.rateError} Hubungi Purchasing atau Administrator.`;
+            status.classList.add('rate-warning');
+            return;
+        }
+
+        status.classList.toggle('rate-warning', deviation > exchangeRateWarningThreshold || row.dataset.rateStale === '1');
+        if (currency === 'IDR') {
+            status.textContent = price > 0
+                ? `Mata uang IDR | Nilai penawaran Rp${idrFormatter.format(price)} | Tidak memerlukan konversi kurs`
+                : 'Mata uang IDR | Tidak memerlukan konversi kurs';
+        } else {
+            const source = referenceRate > 0 && row.dataset.rateDate
+                ? `Frankfurter${row.dataset.rateStale === '1' ? ' (kurs terakhir)' : ''} | ${formatRateDate(row.dataset.rateDate)}`
+                : 'Kurs manual';
+            const warning = deviation > exchangeRateWarningThreshold ? ` | peringatan selisih ${deviation.toFixed(2)}%` : '';
+            const conversion = appliedRate > 0 ? `1 ${currency} = Rp${rateFormatter.format(appliedRate)}` : '';
+            const estimate = price > 0 && appliedRate > 0
+                ? `${currency} ${originalPriceFormatter.format(price)} = sekitar Rp${idrFormatter.format(price * appliedRate)}`
+                : 'Isi harga penawaran untuk melihat estimasi IDR';
+            status.textContent = appliedRate > 0
+                ? `${source} | ${conversion} | ${estimate}${warning}`
+                : 'Isi kurs manual dan alasannya.';
+        }
+    };
+
+    const loadReferenceRate = async (row, refresh = false) => {
+        const currency = row.querySelector('[data-currency]').value;
+        const rateInput = row.querySelector('[data-exchange-rate]');
+        const referenceRateInput = row.querySelector('[data-reference-rate]');
+        const dateInput = row.querySelector('[data-rate-date]');
+        const reasonInput = row.querySelector('[data-rate-reason]');
+        const status = row.querySelector('[data-rate-status]');
+
+        if (currency === 'IDR') {
+            delete row.dataset.rateError;
+            delete row.dataset.rateDate;
+            delete row.dataset.rateStale;
+            rateInput.value = '1';
+            referenceRateInput.value = '1';
+            dateInput.value = new Date().toISOString().slice(0, 10);
+            reasonInput.value = '';
+            syncCurrencyRow(row);
+            return;
+        }
+
+        delete row.dataset.rateError;
+        delete row.dataset.rateDate;
+        delete row.dataset.rateStale;
+        rateInput.value = '';
+        referenceRateInput.value = '';
+        dateInput.value = '';
+        reasonInput.value = '';
+        status.textContent = 'Mengambil kurs referensi Frankfurter terbaru...';
+        try {
+            const url = new URL(exchangeRateUrl, window.location.origin);
+            url.searchParams.set('currency', currency);
+            if (refresh) url.searchParams.set('refresh', '1');
+            const response = await fetch(url, { headers: { Accept: 'application/json' } });
+            const data = await response.json();
+            if (! response.ok) throw new Error(data.message || 'Kurs referensi tidak tersedia.');
+
+            rateInput.value = Number(data.rate).toFixed(4);
+            referenceRateInput.value = Number(data.rate).toFixed(6);
+            dateInput.value = data.date;
+            reasonInput.value = '';
+            row.dataset.rateDate = data.date;
+            row.dataset.rateStale = data.stale ? '1' : '0';
+        } catch (error) {
+            rateInput.value = '';
+            referenceRateInput.value = '';
+            dateInput.value = '';
+            row.dataset.rateError = error.message || 'Kurs referensi tidak tersedia.';
+        }
+        syncCurrencyRow(row);
+    };
+
+    const bindCurrencyRow = (row) => {
+        row.querySelector('[data-currency]')?.addEventListener('change', () => loadReferenceRate(row));
+        row.querySelector('[data-exchange-rate]')?.addEventListener('input', (event) => {
+            if (Number(event.currentTarget.value || 0) > 0) {
+                delete row.dataset.rateError;
+            }
+            syncCurrencyRow(row);
+        });
+        row.querySelector('[data-original-price]')?.addEventListener('input', () => syncCurrencyRow(row));
+        syncCurrencyRow(row);
+    };
+
     const approvalAllocationForm = document.querySelector('[data-save-approval-selection]')?.closest('form');
     const approvalSaveButton = document.querySelector('[data-save-approval-selection]');
     const approvalDecisions = document.querySelector('[data-approval-decisions]');
@@ -645,6 +813,7 @@
             const index = list.querySelectorAll('[data-vendor-row]').length;
             const html = template.innerHTML.replaceAll('__INDEX__', index);
             list.insertAdjacentHTML('beforeend', html);
+            bindCurrencyRow(list.lastElementChild);
         });
 
         form.addEventListener('click', (event) => {
@@ -654,6 +823,8 @@
 
             event.target.closest('[data-vendor-row]').remove();
         });
+
+        list.querySelectorAll('[data-vendor-row]').forEach(bindCurrencyRow);
     });
 
     document.querySelectorAll('[data-open-qty]').forEach((button) => {

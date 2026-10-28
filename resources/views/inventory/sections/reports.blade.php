@@ -125,7 +125,9 @@
                     $selectedRequestItems = $selectedVendorAllocations->pluck('request_item')->unique('id')->values();
                     $opnameDifferences = $filteredOpnames->flatMap->items->filter(fn ($item) => $item->difference !== 0 && (! $itemId || (int) $item->inventory_item_id === (int) $itemId));
                     $activeRequests = $filteredRequests->whereNotIn('status', ['draft', 'rejected']);
-                    $selectedVendorTotal = $selectedVendorAllocations->sum(fn ($allocation) => $allocation['quotation']->unit_price * $allocation['quotation']->selected_quantity);
+                    $selectedVendorTotal = $selectedVendorAllocations->sum(fn ($allocation) => $allocation['quotation']->totalIdr((float) $allocation['quotation']->selected_quantity));
+                    $purchaseOrderTotalIdr = $filteredPurchaseOrders->sum(fn ($purchaseOrder) => $purchaseOrder->grandTotalIdr());
+                    $creditNoteTotalIdr = $filteredCreditNotes->sum(fn ($creditNote) => $creditNote->items->sum(fn ($item) => $item->totalIdr()));
                     $filteredStockMovements = $stockMovements->filter(fn ($movement) => $dateInRange($movement->created_at) && (! $itemId || (int) $movement->inventory_item_id === (int) $itemId) && (! $status || $movement->type === $status));
                     $filteredActivityLogs = $activityLogs->filter(fn ($log) => $dateInRange($log->created_at) && (! $status || $log->event === $status));
 
@@ -249,7 +251,7 @@
                         'purchase_orders' => [
                             ['label' => 'Total PO', 'value' => $filteredPurchaseOrders->count(), 'note' => $filteredPurchaseOrders->where('status', 'on_progress')->count().' on progress'],
                             ['label' => 'Submitted', 'value' => $filteredPurchaseOrders->whereIn('status', ['submitted', 'issued'])->count(), 'note' => 'Siap penerimaan'],
-                            ['label' => 'Nilai PO', 'value' => $canSeePrices ? 'Rp'.number_format($filteredPurchaseOrders->sum('grand_total'), 0, ',', '.') : 'Disembunyikan', 'note' => 'Total sesuai filter'],
+                            ['label' => 'Nilai PO', 'value' => $canSeePrices ? 'Rp'.number_format($purchaseOrderTotalIdr, 0, ',', '.') : 'Disembunyikan', 'note' => 'Ekuivalen IDR sesuai filter'],
                         ],
                         'receipts' => [
                             ['label' => 'Dokumen penerimaan', 'value' => $receiptRows->pluck('document')->unique()->count(), 'note' => 'Sesuai filter'],
@@ -259,7 +261,7 @@
                         'credit_notes' => [
                             ['label' => 'Total CN', 'value' => $filteredCreditNotes->count(), 'note' => $filteredCreditNotes->where('status', 'draft')->count().' masih request'],
                             ['label' => 'Qty problem', 'value' => number_format($filteredCreditNotes->flatMap->items->sum('quantity_problem'), 0, ',', '.'), 'note' => 'Barang bermasalah'],
-                            ['label' => 'Nilai credit', 'value' => $canSeePrices ? 'Rp'.number_format($filteredCreditNotes->flatMap->items->sum('total'), 0, ',', '.') : 'Disembunyikan', 'note' => 'Estimasi refund'],
+                            ['label' => 'Nilai credit', 'value' => $canSeePrices ? 'Rp'.number_format($creditNoteTotalIdr, 0, ',', '.') : 'Disembunyikan', 'note' => 'Ekuivalen IDR'],
                         ],
                         'usage' => [
                             ['label' => 'Transaksi pakai', 'value' => $filteredUsageLogs->count(), 'note' => $filteredUsageLogs->pluck('unit_id')->unique()->count().' unit'],
@@ -570,7 +572,16 @@
                                 <td>{{ $requestItem->inventoryItem->name }}</td>
                                 <td>{{ $selectedQuotation->vendor->name }}<div class="muted">{{ $selectedQuotation->brand_name ?: '-' }}</div></td>
                                 <td>{{ $selectedQuotation->selected_quantity }} {{ $requestItem->uom ?? $requestItem->inventoryItem->uom }}</td>
-                                <td class="price">{{ $canSeePrices ? 'Rp'.number_format($selectedQuotation->unit_price * $selectedQuotation->selected_quantity, 0, ',', '.') : 'Disembunyikan' }}</td>
+                                <td class="price">
+                                    @if ($canSeePrices)
+                                        <strong>{{ \App\Support\Currency::format($selectedQuotation->unit_price * $selectedQuotation->selected_quantity, $selectedQuotation->currency_code) }}</strong>
+                                        @if ($selectedQuotation->currency_code !== 'IDR')
+                                            <div class="muted">Setara {{ \App\Support\Currency::format($selectedQuotation->totalIdr((float) $selectedQuotation->selected_quantity)) }}</div>
+                                        @endif
+                                    @else
+                                        Disembunyikan
+                                    @endif
+                                </td>
                             </tr>
                         @empty
                             <tr><td colspan="6">Belum ada vendor terpilih sesuai filter.</td></tr>
@@ -617,7 +628,16 @@
                                 </td>
                                 <td>{{ $purchaseOrder->purchaseRequest->camp->name }}</td>
                                 <td><span class="pill">{{ $purchaseOrderStatusLabel($purchaseOrder->status) }}</span></td>
-                                <td class="price">{{ $canSeePrices ? 'Rp'.number_format($purchaseOrder->grand_total, 0, ',', '.') : 'Disembunyikan' }}</td>
+                                <td class="price">
+                                    @if ($canSeePrices)
+                                        <strong>{{ \App\Support\Currency::format($purchaseOrder->grand_total, $purchaseOrder->currency_code) }}</strong>
+                                        @if ($purchaseOrder->currency_code !== 'IDR')
+                                            <div class="muted">Setara {{ \App\Support\Currency::format($purchaseOrder->grandTotalIdr()) }}</div>
+                                        @endif
+                                    @else
+                                        Disembunyikan
+                                    @endif
+                                </td>
                             </tr>
                         @empty
                             <tr><td colspan="8">Belum ada purchase order sesuai filter.</td></tr>
@@ -654,7 +674,16 @@
                                     @endforeach
                                 </td>
                                 <td><span class="pill {{ in_array($creditNote->status, ['credited', 'closed'], true) ? 'ok' : 'wait' }}">{{ $creditNoteStatusLabel($creditNote->status) }}</span></td>
-                                <td class="price">{{ $canSeePrices ? 'Rp'.number_format($creditNote->items->sum('total'), 0, ',', '.') : 'Disembunyikan' }}</td>
+                                <td class="price">
+                                    @if ($canSeePrices)
+                                        <strong>{{ \App\Support\Currency::format($creditNote->items->sum('total'), $creditNote->currency_code) }}</strong>
+                                        @if ($creditNote->currency_code !== 'IDR')
+                                            <div class="muted">Setara {{ \App\Support\Currency::format($creditNote->items->sum(fn ($item) => $item->totalIdr())) }}</div>
+                                        @endif
+                                    @else
+                                        Disembunyikan
+                                    @endif
+                                </td>
                             </tr>
                         @empty
                             <tr><td colspan="8">Belum ada credit note sesuai filter.</td></tr>

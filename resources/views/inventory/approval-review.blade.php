@@ -307,17 +307,17 @@
                         @if ($canApproveLogistic)
                             <div class="actions">
                                 <form method="post" action="{{ route('request-items.approve-equipment', $requestItem) }}" data-confirm="Setujui {{ $requestItem->inventoryItem->name }} pada tahap Logistik?">@csrf<button>Approve</button></form>
-                                <form method="post" action="{{ route('request-items.reject-equipment', $requestItem) }}" data-confirm="Tolak {{ $requestItem->inventoryItem->name }} pada tahap Logistik?">@csrf<input type="text" name="rejection_note" placeholder="Catatan reject" required><button class="danger">Reject</button></form>
+                                <form method="post" action="{{ route('request-items.reject-equipment', $requestItem) }}" data-confirm="Tolak {{ $requestItem->inventoryItem->name }} pada tahap Logistik?">@csrf<input type="text" name="rejection_note" minlength="3" maxlength="1000" placeholder="Alasan penolakan" required><button class="danger">Reject</button></form>
                             </div>
                         @elseif ($canApproveChiefMechanic)
                             <div class="actions">
                                 <form method="post" action="{{ route('request-items.approve-ppic', $requestItem) }}" data-confirm="Setujui {{ $requestItem->inventoryItem->name }} pada tahap Chief Mechanic?">@csrf<button>Approve</button></form>
-                                <form method="post" action="{{ route('request-items.reject-ppic', $requestItem) }}" data-confirm="Tolak {{ $requestItem->inventoryItem->name }} pada tahap Chief Mechanic?">@csrf<input type="text" name="rejection_note" placeholder="Catatan reject" required><button class="danger">Reject</button></form>
+                                <form method="post" action="{{ route('request-items.reject-ppic', $requestItem) }}" data-confirm="Tolak {{ $requestItem->inventoryItem->name }} pada tahap Chief Mechanic?">@csrf<input type="text" name="rejection_note" minlength="3" maxlength="1000" placeholder="Alasan penolakan" required><button class="danger">Reject</button></form>
                             </div>
                         @elseif ($canApproveManagerCamp)
                             <div class="actions">
                                 <form method="post" action="{{ route('request-items.approve-manager-camp', $requestItem) }}" data-confirm="Berikan persetujuan akhir Manager Camp untuk {{ $requestItem->inventoryItem->name }}?">@csrf<button>Approve</button></form>
-                                <form method="post" action="{{ route('request-items.reject-manager-camp', $requestItem) }}" data-confirm="Tolak {{ $requestItem->inventoryItem->name }} pada tahap Manager Camp?">@csrf<input type="text" name="rejection_note" placeholder="Catatan reject" required><button class="danger">Reject</button></form>
+                                <form method="post" action="{{ route('request-items.reject-manager-camp', $requestItem) }}" data-confirm="Tolak {{ $requestItem->inventoryItem->name }} pada tahap Manager Camp?">@csrf<input type="text" name="rejection_note" minlength="3" maxlength="1000" placeholder="Alasan penolakan" required><button class="danger">Reject</button></form>
                             </div>
                         @else
                             <span class="muted">Tidak ada aksi.</span>

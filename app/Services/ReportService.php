@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\ActivityLog;
 use App\Models\Camp;
 use App\Models\CampStock;
+use App\Models\CampStockMovement;
 use App\Models\Company;
 use App\Models\CreditNote;
 use App\Models\GoodsReceiptItem;
@@ -43,7 +44,7 @@ class ReportService
             'usage' => $this->usage($user, $filters),
             'dispatches' => $this->dispatches($user, $filters),
             'opnames' => $this->opnames($user, $filters),
-            'stock_movements' => $this->stockMovements($filters),
+            'stock_movements' => $this->stockMovements($user, $filters),
             'inventory_planning' => $this->inventoryPlanning($filters),
             'activity_logs' => $this->activityLogs($filters),
             default => abort(404),
@@ -491,14 +492,51 @@ class ReportService
         return $this->payload('Report Selisih Stock Opname', 'Selisih stok fisik terhadap saldo sistem per lokasi.', [['key' => 'number', 'label' => 'No. Opname'], ['key' => 'date', 'label' => 'Tanggal'], ['key' => 'location', 'label' => 'Lokasi'], ['key' => 'item', 'label' => 'Barang'], ['key' => 'system', 'label' => 'Sistem', 'align' => 'right'], ['key' => 'physical', 'label' => 'Fisik', 'align' => 'right'], ['key' => 'difference', 'label' => 'Selisih', 'align' => 'right'], ['key' => 'status', 'label' => 'Status', 'type' => 'status'], ['key' => 'notes', 'label' => 'Catatan']], $rows, [$this->kpi('Baris selisih', $models->count(), 'Sesuai filter'), $this->kpi('Di luar toleransi', $models->where('variance_status', 'out_of_tolerance')->count(), 'Perlu diperiksa'), $this->kpi('Barang terdampak', $models->pluck('inventory_item_id')->unique()->count(), 'Jenis barang')]);
     }
 
-    private function stockMovements(array $filters): array
+    private function stockMovements(User $user, array $filters): array
     {
-        $query = StockMovement::with(['inventoryItem', 'user']);
-        $this->date($query, 'created_at', $filters);
-        $query->when($filters['item_id'], fn ($q, $id) => $q->where('inventory_item_id', $id))->when($filters['status'], fn ($q, $status) => $q->where('type', $status));
-        $models = $query->latest()->get();
-        $rows = $models->map(fn ($m) => ['time' => $m->created_at->format('d M Y H:i'), 'item' => $this->itemName($m->inventoryItem), 'type' => $this->label($m->type), 'quantity' => ($m->quantity > 0 ? '+' : '').$this->number($m->quantity), 'before' => $this->number($m->stock_before), 'after' => $this->number($m->stock_after), 'user' => $m->user?->name ?: 'Sistem', 'notes' => $m->notes ?: '-']);
-        return $this->payload('Kartu Stok', 'Jejak seluruh perubahan saldo stok gudang kantor.', [['key' => 'time', 'label' => 'Waktu'], ['key' => 'item', 'label' => 'Barang'], ['key' => 'type', 'label' => 'Tipe'], ['key' => 'quantity', 'label' => 'Qty', 'align' => 'right'], ['key' => 'before', 'label' => 'Sebelum', 'align' => 'right'], ['key' => 'after', 'label' => 'Sesudah', 'align' => 'right'], ['key' => 'user', 'label' => 'User'], ['key' => 'notes', 'label' => 'Catatan']], $rows, [$this->kpi('Mutasi', $models->count(), 'Sesuai filter'), $this->kpi('Barang', $models->pluck('inventory_item_id')->unique()->count(), 'Jenis barang'), $this->kpi('Pengguna', $models->pluck('user_id')->filter()->unique()->count(), 'Mencatat mutasi')]);
+        $warehouseQuery = StockMovement::with(['inventoryItem', 'user']);
+        $this->date($warehouseQuery, 'created_at', $filters);
+        $warehouseQuery
+            ->when($filters['item_id'], fn ($q, $id) => $q->where('inventory_item_id', $id))
+            ->when($filters['status'], fn ($q, $status) => $q->where('type', $status));
+
+        $campQuery = CampStockMovement::with(['camp.company', 'inventoryItem', 'user']);
+        $this->date($campQuery, 'created_at', $filters);
+        $visibleCampIds = $this->visibleCampIds($user);
+        $campQuery
+            ->when($visibleCampIds !== null, fn ($q) => $q->whereIn('camp_id', $visibleCampIds))
+            ->when($filters['camp_id'], fn ($q, $id) => $q->where('camp_id', $id))
+            ->when($filters['company'], fn ($q, $company) => $q->whereHas('camp', fn ($c) => $c->where('company_name', $company)))
+            ->when($filters['item_id'], fn ($q, $id) => $q->where('inventory_item_id', $id))
+            ->when($filters['status'], fn ($q, $status) => $q->where('type', $status));
+
+        $warehouseMovements = $warehouseQuery->get();
+        $campMovements = $campQuery->get();
+        $rows = $warehouseMovements->map(fn ($movement) => $this->stockMovementRow($movement, 'Gudang Kantor'))
+            ->concat($campMovements->map(fn ($movement) => $this->stockMovementRow($movement, $this->campName($movement->camp))))
+            ->sortByDesc('_timestamp')
+            ->values();
+
+        $itemCount = $warehouseMovements->pluck('inventory_item_id')->concat($campMovements->pluck('inventory_item_id'))->unique()->count();
+        $userCount = $warehouseMovements->pluck('user_id')->concat($campMovements->pluck('user_id'))->filter()->unique()->count();
+
+        return $this->payload('Kartu Stok', 'Jejak perubahan saldo stok gudang kantor dan seluruh site/camp yang dapat diakses.', [['key' => 'time', 'label' => 'Waktu'], ['key' => 'location', 'label' => 'Lokasi'], ['key' => 'item', 'label' => 'Barang'], ['key' => 'type', 'label' => 'Tipe'], ['key' => 'quantity', 'label' => 'Qty', 'align' => 'right'], ['key' => 'before', 'label' => 'Sebelum', 'align' => 'right'], ['key' => 'after', 'label' => 'Sesudah', 'align' => 'right'], ['key' => 'user', 'label' => 'User'], ['key' => 'notes', 'label' => 'Catatan']], $rows, [$this->kpi('Mutasi', $rows->count(), 'Sesuai filter'), $this->kpi('Barang', $itemCount, 'Jenis barang'), $this->kpi('Pengguna', $userCount, 'Mencatat mutasi')]);
+    }
+
+    private function stockMovementRow($movement, string $location): array
+    {
+        return [
+            'time' => $movement->created_at->format('d M Y H:i'),
+            'location' => $location,
+            'item' => $this->itemName($movement->inventoryItem),
+            'type' => $this->label($movement->type),
+            'quantity' => ($movement->quantity > 0 ? '+' : '').$this->number($movement->quantity),
+            'before' => $this->number($movement->stock_before),
+            'after' => $this->number($movement->stock_after),
+            'user' => $movement->user?->name ?: 'Sistem',
+            'notes' => $movement->notes ?: '-',
+            '_timestamp' => $movement->created_at->getTimestamp(),
+        ];
     }
 
     private function inventoryPlanning(array $filters): array
@@ -628,7 +666,7 @@ class ReportService
             'usage' => ['date', 'company', 'camp', 'unit', 'item'],
             'dispatches' => ['date', 'company', 'camp', 'item', 'status'],
             'opnames' => ['date', 'company', 'camp', 'item', 'status'],
-            'stock_movements' => ['date', 'item', 'status'],
+            'stock_movements' => ['date', 'company', 'camp', 'item', 'status'],
             'activity_logs' => ['date', 'status'],
             default => [],
         };
@@ -644,7 +682,9 @@ class ReportService
             'credit_notes' => CreditNote::query()->distinct()->orderBy('status')->pluck('status')->filter()->values()->all(),
             'dispatches' => SiteDispatch::query()->distinct()->orderBy('status')->pluck('status')->filter()->values()->all(),
             'opnames' => ['within_tolerance', 'out_of_tolerance'],
-            'stock_movements' => StockMovement::query()->distinct()->orderBy('type')->pluck('type')->filter()->values()->all(),
+            'stock_movements' => StockMovement::query()->distinct()->pluck('type')
+                ->concat(CampStockMovement::query()->distinct()->pluck('type'))
+                ->filter()->unique()->sort()->values()->all(),
             'activity_logs' => ActivityLog::query()->distinct()->orderBy('event')->pluck('event')->filter()->values()->all(),
             default => [],
         };

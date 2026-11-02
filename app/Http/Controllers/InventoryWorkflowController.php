@@ -1018,6 +1018,28 @@ class InventoryWorkflowController extends Controller
         return redirect($systemNotification->url ?: route('dashboard'));
     }
 
+    public function notifications(Request $request)
+    {
+        $status = $request->input('status') === 'unread' ? 'unread' : 'all';
+        $query = auth()->user()->systemNotifications()->latest();
+
+        if ($status === 'unread') {
+            $query->whereNull('read_at');
+        }
+
+        return $this->renderMenu('notifications', null, [
+            'notificationPaginator' => $query->paginate(25)->withQueryString(),
+            'notificationStatus' => $status,
+        ]);
+    }
+
+    public function markAllNotificationsRead()
+    {
+        auth()->user()->systemNotifications()->whereNull('read_at')->update(['read_at' => now()]);
+
+        return back()->with('success', 'Semua notifikasi telah ditandai sudah dibaca.');
+    }
+
     public function reports(?string $reportType = null)
     {
         $this->ensurePermission('reports.view');
@@ -5061,7 +5083,14 @@ class InventoryWorkflowController extends Controller
                     StockService::releaseReserved($dispatchItem->inventory_item_id, $accountedQuantity);
                 }
                 if (in_array($item['condition'], ['good', 'quantity_short'], true) && $quantityReceived > 0) {
-                    CampStockService::increase($siteDispatch->camp_id, $dispatchItem->inventory_item_id, $quantityReceived);
+                    CampStockService::increase(
+                        $siteDispatch->camp_id,
+                        $dispatchItem->inventory_item_id,
+                        $quantityReceived,
+                        'site_receipt',
+                        $siteReceiptItem,
+                        'Penerimaan site dari pengiriman '.$siteDispatch->number,
+                    );
                 }
                 if ($problemQuantity > 0) {
                     $creditNoteItems->push(compact('dispatchItem', 'siteReceiptItem', 'problemQuantity', 'item'));
@@ -5245,7 +5274,14 @@ class InventoryWorkflowController extends Controller
 
         $usageLog = DB::transaction(function () use ($data, $unit) {
             $usageLog = UsageLog::create($data);
-            CampStockService::decrease($unit->camp_id, (int) $data['inventory_item_id'], (float) $data['quantity']);
+            CampStockService::decrease(
+                $unit->camp_id,
+                (int) $data['inventory_item_id'],
+                (float) $data['quantity'],
+                'usage',
+                $usageLog,
+                'Pemakaian oleh unit '.$unit->code.(! empty($data['reference_number']) ? ' / Ref. '.$data['reference_number'] : ''),
+            );
 
             return $usageLog;
         });
@@ -5804,6 +5840,7 @@ class InventoryWorkflowController extends Controller
             'item_category_id' => ['required', 'exists:item_categories,id'],
             'uom' => ['required', 'exists:unit_of_measures,code'],
             'minimum_stock' => [Rule::requiredIf(! $usesInventoryPlanning), 'nullable', 'integer', 'min:0'],
+            'maximum_stock' => [Rule::requiredIf(! $usesInventoryPlanning), 'nullable', 'integer', 'min:0', 'gte:minimum_stock'],
             'forecast_annual_demand' => ['nullable', 'numeric', 'min:0'],
             'lead_time_days' => ['nullable', 'integer', 'min:0'],
             'safety_stock' => ['nullable', 'numeric', 'min:0'],
@@ -5814,6 +5851,7 @@ class InventoryWorkflowController extends Controller
 
         $data['category'] = $itemCategory->name;
         $data['minimum_stock'] = $usesInventoryPlanning ? 0 : (int) $data['minimum_stock'];
+        $data['maximum_stock'] = $usesInventoryPlanning ? 0 : (int) $data['maximum_stock'];
 
         if (! $usesInventoryPlanning) {
             $data['forecast_annual_demand'] = 0;
@@ -5934,6 +5972,7 @@ class InventoryWorkflowController extends Controller
             'category' => $itemCategory->name,
             'uom' => $item['uom'],
             'minimum_stock' => 0,
+            'maximum_stock' => 0,
             'stock_on_hand' => 0,
             'forecast_annual_demand' => 0,
             'lead_time_days' => 0,
@@ -5990,7 +6029,7 @@ class InventoryWorkflowController extends Controller
     private function rejectPurchaseRequestItem(Request $request, PurchaseRequestItem $purchaseRequestItem, string $stage): bool
     {
         $data = $request->validate([
-            'rejection_note' => ['nullable', 'string'],
+            'rejection_note' => ['required', 'string', 'min:3', 'max:1000'],
         ]);
 
         $allowedStatuses = [

@@ -1360,7 +1360,7 @@
         'credit-notes' => 'Credit Note', 'dispatches' => 'Pengiriman Barang',
         'usage' => 'Pemakaian Unit', 'stock' => 'Stok Barang',
         'stock-opname' => 'Stock Opname', 'reports' => 'Report',
-        'maintenance' => 'Pemeliharaan Sistem',
+        'maintenance' => 'Pemeliharaan Sistem', 'notifications' => 'Notifikasi',
     ];
     $nav = [];
     if ($currentUser->hasPermission('dashboard.view')) {
@@ -1640,6 +1640,9 @@
                                 </span>
                             </div>
                         @endforelse
+                        <a class="notification-item notification-view-all" href="{{ route('notifications.index') }}">
+                            <span class="notification-copy"><strong>Lihat semua notifikasi</strong></span>
+                        </a>
                     </div>
                 </details>
                 <span class="pill date-badge">{{ now()->format('d M Y') }}</span>
@@ -1708,6 +1711,7 @@
             @include('inventory.sections.usage')
             @include('inventory.sections.stock')
             @include('inventory.sections.stock-opname')
+            @include('inventory.sections.notifications')
             @include('inventory.sections.reports-v2')
             @include('inventory.sections.maintenance')
         </main>

@@ -65,6 +65,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/stock-opname/create', [InventoryWorkflowController::class, 'createStockOpname'])->name('stock-opname.create');
     Route::get('/stock-opname/{stockOpname}/edit', [InventoryWorkflowController::class, 'editStockOpname'])->name('stock-opnames.edit');
     Route::get('/stock-opname/items/{inventoryItem}/usage-history', [InventoryWorkflowController::class, 'stockOpnameItemHistory'])->name('stock-opname.items.history');
+    Route::get('/notifications', [InventoryWorkflowController::class, 'notifications'])->name('notifications.index');
+    Route::post('/notifications/read-all', [InventoryWorkflowController::class, 'markAllNotificationsRead'])->name('notifications.read-all');
     Route::post('/notifications/{systemNotification}/read', [InventoryWorkflowController::class, 'readNotification'])->name('notifications.read');
     Route::get('/reports', [InventoryWorkflowController::class, 'reports'])->name('reports');
     Route::get('/reports/{reportType}/export/{format}', [InventoryWorkflowController::class, 'exportReport'])->name('reports.export');

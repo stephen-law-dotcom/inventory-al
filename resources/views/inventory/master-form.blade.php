@@ -366,7 +366,10 @@
                         </select>
                     </label>
                 </div>
-                <label data-manual-minimum-field>Minimum stok manual <input name="minimum_stock" type="number" min="0" value="{{ old('minimum_stock', $record->minimum_stock ?? 0) }}"></label>
+                <div class="row" data-manual-stock-fields>
+                    <label>Minimum stok manual <input name="minimum_stock" type="number" min="0" value="{{ old('minimum_stock', $record->minimum_stock ?? 0) }}"></label>
+                    <label>Maksimum stok manual <input name="maximum_stock" type="number" min="0" value="{{ old('maximum_stock', $record->maximum_stock ?? $record->minimum_stock ?? 0) }}"></label>
+                </div>
                 <div data-inventory-planning-fields>
                     <div class="row">
                         <label>Forecast kebutuhan tahunan <input name="forecast_annual_demand" type="number" min="0" step="0.01" value="{{ old('forecast_annual_demand', $record->forecast_annual_demand ?? 0) }}"></label>
@@ -487,17 +490,19 @@
 <script>
     const categoryInput = document.querySelector('[data-item-category]');
     const planningFields = document.querySelector('[data-inventory-planning-fields]');
-    const manualMinimumField = document.querySelector('[data-manual-minimum-field]');
-    const manualMinimumInput = manualMinimumField?.querySelector('input');
+    const manualStockFields = document.querySelector('[data-manual-stock-fields]');
+    const manualStockInputs = manualStockFields?.querySelectorAll('input') ?? [];
 
     const syncPlanningFields = () => {
         const option = categoryInput?.selectedOptions[0];
         const usesPlanning = option?.dataset.usesPlanning === '1';
 
         planningFields.hidden = ! usesPlanning;
-        manualMinimumField.hidden = usesPlanning;
-        manualMinimumInput.disabled = usesPlanning;
-        manualMinimumInput.required = ! usesPlanning;
+        manualStockFields.hidden = usesPlanning;
+        manualStockInputs.forEach((input) => {
+            input.disabled = usesPlanning;
+            input.required = ! usesPlanning;
+        });
     };
 
     categoryInput?.addEventListener('change', syncPlanningFields);

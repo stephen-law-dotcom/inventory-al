@@ -185,7 +185,7 @@
                         <section>
                             <h2>List Barang</h2>
                             <table>
-                                <thead><tr><th>Part Number</th><th>Nama</th><th>Deskripsi</th><th>Kategori</th><th>Satuan</th><th>Stok</th><th>Minimum</th>@if ($canManageMasterData)<th>Aksi</th>@endif</tr></thead>
+                                <thead><tr><th>Part Number</th><th>Nama</th><th>Deskripsi</th><th>Kategori</th><th>Satuan</th><th>Stok</th><th>Min-Max</th>@if ($canManageMasterData)<th>Aksi</th>@endif</tr></thead>
                                 <tbody>
                                 @forelse ($items as $item)
                                     <tr>
@@ -195,7 +195,7 @@
                                         <td>{{ $item->category }}</td>
                                         <td>{{ $item->uom }}</td>
                                         <td>{{ $item->stock_on_hand }} {{ $item->uom }}</td>
-                                        <td>{{ $item->usesInventoryPlanning() ? 'Otomatis (ROP)' : $item->minimum_stock . ' ' . $item->uom }}</td>
+                                        <td>{{ $item->usesInventoryPlanning() ? 'Otomatis (ROP/EOQ)' : $item->minimumStockLevel().' - '.$item->maximumStockLevel().' '.$item->uom }}</td>
                                         @if ($canManageMasterData)
                                             <td>
                                                 <details class="action-menu">

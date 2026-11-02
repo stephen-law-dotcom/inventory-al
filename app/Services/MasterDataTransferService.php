@@ -201,6 +201,7 @@ class MasterDataTransferService
             'category_code' => ['required', 'string', 'exists:item_categories,code'],
             'uom' => ['required', 'string', 'exists:unit_of_measures,code'],
             'minimum_stock' => ['nullable', 'integer', 'min:0'],
+            'maximum_stock' => ['nullable', 'integer', 'min:0'],
             'forecast_annual_demand' => ['nullable', 'numeric', 'min:0'],
             'lead_time_days' => ['nullable', 'integer', 'min:0'],
             'safety_stock' => ['nullable', 'numeric', 'min:0'],
@@ -218,6 +219,10 @@ class MasterDataTransferService
             'category' => $category->name,
             'uom' => $data['uom'],
             'minimum_stock' => $usesPlanning ? 0 : (int) ($data['minimum_stock'] ?? 0),
+            'maximum_stock' => $usesPlanning ? 0 : max(
+                (int) ($data['minimum_stock'] ?? 0),
+                (int) ($data['maximum_stock'] ?? $data['minimum_stock'] ?? 0),
+            ),
             'forecast_annual_demand' => $usesPlanning ? (float) ($data['forecast_annual_demand'] ?? 0) : 0,
             'lead_time_days' => $usesPlanning ? (int) ($data['lead_time_days'] ?? 0) : 0,
             'safety_stock' => $usesPlanning ? (float) ($data['safety_stock'] ?? 0) : 0,
@@ -341,8 +346,8 @@ class MasterDataTransferService
     private function exportItems(): array
     {
         return $this->payload(
-            ['sku', 'name', 'description', 'category_code', 'uom', 'minimum_stock', 'forecast_annual_demand', 'lead_time_days', 'safety_stock', 'ordering_cost', 'holding_cost_per_unit', 'shrinkage_tolerance_percent'],
-            InventoryItem::with('itemCategory')->orderBy('sku')->get()->map(fn ($item) => [$item->sku, $item->name, $item->description, $item->itemCategory?->code, $item->uom, $item->minimum_stock, $item->forecast_annual_demand, $item->lead_time_days, $item->safety_stock, $item->ordering_cost, $item->holding_cost_per_unit, $item->shrinkage_tolerance_percent])
+            ['sku', 'name', 'description', 'category_code', 'uom', 'minimum_stock', 'maximum_stock', 'forecast_annual_demand', 'lead_time_days', 'safety_stock', 'ordering_cost', 'holding_cost_per_unit', 'shrinkage_tolerance_percent'],
+            InventoryItem::with('itemCategory')->orderBy('sku')->get()->map(fn ($item) => [$item->sku, $item->name, $item->description, $item->itemCategory?->code, $item->uom, $item->minimum_stock, $item->maximum_stock, $item->forecast_annual_demand, $item->lead_time_days, $item->safety_stock, $item->ordering_cost, $item->holding_cost_per_unit, $item->shrinkage_tolerance_percent])
         );
     }
 

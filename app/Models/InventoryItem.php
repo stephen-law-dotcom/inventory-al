@@ -11,6 +11,8 @@ class InventoryItem extends Model
     private ?float $cachedOutstandingPurchaseOrderQuantity = null;
 
     protected $casts = [
+        'minimum_stock' => 'integer',
+        'maximum_stock' => 'integer',
         'forecast_annual_demand' => 'float',
         'safety_stock' => 'float',
         'ordering_cost' => 'float',
@@ -113,6 +115,10 @@ class InventoryItem extends Model
 
     public function minimumStockLevel(): int
     {
+        if (! $this->usesInventoryPlanning()) {
+            return (int) $this->minimum_stock;
+        }
+
         $calculated = (int) ceil($this->reorderPoint());
 
         return $calculated > 0 ? $calculated : (int) $this->minimum_stock;
@@ -121,6 +127,11 @@ class InventoryItem extends Model
     public function maximumStockLevel(): int
     {
         $minimum = $this->minimumStockLevel();
+
+        if (! $this->usesInventoryPlanning()) {
+            return max($minimum, (int) $this->maximum_stock);
+        }
+
         $eoq = (int) ceil($this->eoq());
 
         return $eoq > 0 ? $minimum + $eoq : $minimum;

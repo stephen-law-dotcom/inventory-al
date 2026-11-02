@@ -41,18 +41,37 @@ class CampStockService
         return $stock->refresh();
     }
 
-    public static function increase(int $campId, int $inventoryItemId, float $quantity): CampStock
+    public static function increase(
+        int $campId,
+        int $inventoryItemId,
+        float $quantity,
+        ?string $type = null,
+        ?Model $reference = null,
+        ?string $notes = null,
+    ): CampStock
     {
         $stock = self::lockedBalance($campId, $inventoryItemId);
-        $stock->increment('quantity', abs($quantity));
+        $before = (float) $stock->quantity;
+        $after = $before + abs($quantity);
+        $stock->update(['quantity' => $after]);
+
+        self::recordMovement($stock, $before, $after, $type, $reference, $notes);
 
         return $stock->refresh();
     }
 
-    public static function decrease(int $campId, int $inventoryItemId, float $quantity): CampStock
+    public static function decrease(
+        int $campId,
+        int $inventoryItemId,
+        float $quantity,
+        ?string $type = null,
+        ?Model $reference = null,
+        ?string $notes = null,
+    ): CampStock
     {
         $stock = self::lockedBalance($campId, $inventoryItemId);
-        $after = (float) $stock->quantity - abs($quantity);
+        $before = (float) $stock->quantity;
+        $after = $before - abs($quantity);
 
         if ($after < 0) {
             throw ValidationException::withMessages([
@@ -62,7 +81,35 @@ class CampStockService
 
         $stock->update(['quantity' => $after]);
 
+        self::recordMovement($stock, $before, $after, $type, $reference, $notes);
+
         return $stock->refresh();
+    }
+
+    private static function recordMovement(
+        CampStock $stock,
+        float $before,
+        float $after,
+        ?string $type,
+        ?Model $reference,
+        ?string $notes,
+    ): void {
+        if ($type === null || abs($after - $before) <= 0.00001) {
+            return;
+        }
+
+        CampStockMovement::create([
+            'camp_id' => $stock->camp_id,
+            'inventory_item_id' => $stock->inventory_item_id,
+            'user_id' => auth()->id(),
+            'type' => $type,
+            'reference_type' => $reference?->getMorphClass(),
+            'reference_id' => $reference?->getKey(),
+            'quantity' => $after - $before,
+            'stock_before' => $before,
+            'stock_after' => $after,
+            'notes' => $notes,
+        ]);
     }
 
     private static function lockedBalance(int $campId, int $inventoryItemId): CampStock

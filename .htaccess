@@ -7,7 +7,7 @@
 
     # Serve public assets without exposing /public in the browser URL.
     RewriteRule ^public(?:/|$) - [L]
-    RewriteRule ^(assets|build|storage)/(.*)$ public/$1/$2 [L,QSA]
+    RewriteRule ^(assets|build|css|js|storage)/(.*)$ public/$1/$2 [L,QSA]
     RewriteRule ^(favicon\.ico|favicon\.svg|robots\.txt)$ public/$1 [L,QSA]
 
     # Prevent direct access to Laravel application internals.

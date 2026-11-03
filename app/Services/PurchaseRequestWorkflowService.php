@@ -3,9 +3,167 @@
 namespace App\Services;
 
 use App\Models\PurchaseRequest;
+use App\Models\PurchaseRequestItem;
+use App\Models\User;
+use Illuminate\Support\Facades\DB;
 
 class PurchaseRequestWorkflowService
 {
+    public function markAsSubmitted(PurchaseRequest $purchaseRequest): void
+    {
+        $purchaseRequest->update([
+            'status' => 'submitted',
+            'logistic_approval_status' => 'pending',
+            'logistic_checked_at' => null,
+            'chief_mechanic_approval_status' => 'waiting',
+            'chief_mechanic_ordered_at' => null,
+            'manager_camp_approval_status' => 'waiting',
+            'manager_camp_acknowledged_at' => null,
+            'equipment_approval_status' => 'pending',
+            'equipment_approved_at' => null,
+            'ppic_approval_status' => 'waiting',
+            'ppic_approved_at' => null,
+            'director_approval_status' => 'not_required',
+            'director_approved_at' => null,
+            'estimated_total' => 0,
+            'final_total' => 0,
+        ]);
+
+        $purchaseRequest->items()->update([
+            'status' => 'submitted',
+            'logistic_approval_status' => 'pending',
+            'logistic_checked_at' => null,
+            'chief_mechanic_approval_status' => 'waiting',
+            'chief_mechanic_ordered_at' => null,
+            'manager_camp_approval_status' => 'waiting',
+            'manager_camp_acknowledged_at' => null,
+            'equipment_approval_status' => 'pending',
+            'equipment_approved_at' => null,
+            'ppic_approval_status' => 'waiting',
+            'ppic_approved_at' => null,
+            'director_approval_status' => 'not_required',
+            'director_approved_at' => null,
+            'final_total' => 0,
+            'rejection_note' => null,
+        ]);
+    }
+
+    public function approvalStageFor(User $user, PurchaseRequestItem $item): ?string
+    {
+        if ($user->canApproveLogistic()
+            && $item->status === 'submitted'
+            && $item->logistic_approval_status === 'pending') {
+            return 'logistic';
+        }
+
+        if ($user->canApproveChiefMechanic()
+            && $item->status === 'logistic_checked'
+            && $item->logistic_approval_status === 'approved'
+            && $item->chief_mechanic_approval_status === 'pending') {
+            return 'chief_mechanic';
+        }
+
+        if ($user->canApproveManagerCamp()
+            && $item->status === 'waiting_manager_camp'
+            && $item->manager_camp_approval_status === 'pending') {
+            return 'manager_camp';
+        }
+
+        return null;
+    }
+
+    public function approveItemByStage(PurchaseRequestItem $item, string $stage): void
+    {
+        match ($stage) {
+            'logistic' => $item->update([
+                'status' => 'logistic_checked',
+                'logistic_approval_status' => 'approved',
+                'logistic_checked_at' => now(),
+                'equipment_approval_status' => 'approved',
+                'equipment_approved_at' => now(),
+                'chief_mechanic_approval_status' => 'pending',
+                'ppic_approval_status' => 'waiting',
+                'rejection_note' => null,
+            ]),
+            'chief_mechanic' => $item->update([
+                'status' => 'waiting_manager_camp',
+                'chief_mechanic_approval_status' => 'approved',
+                'chief_mechanic_ordered_at' => now(),
+                'ppic_approval_status' => 'approved',
+                'ppic_approved_at' => now(),
+                'manager_camp_approval_status' => 'pending',
+                'rejection_note' => null,
+            ]),
+            'manager_camp' => $item->update([
+                'status' => 'ready_for_quotation',
+                'manager_camp_approval_status' => 'approved',
+                'manager_camp_acknowledged_at' => now(),
+                'rejection_note' => null,
+            ]),
+            default => null,
+        };
+    }
+
+    public function transitionItemWithLock(PurchaseRequestItem $item, callable $transition): ?PurchaseRequestItem
+    {
+        return DB::transaction(function () use ($item, $transition) {
+            $lockedItem = PurchaseRequestItem::with('purchaseRequest')
+                ->lockForUpdate()
+                ->findOrFail($item->id);
+
+            if (! $transition($lockedItem)) {
+                return null;
+            }
+
+            $this->syncApprovalStatus($lockedItem->purchaseRequest);
+
+            return $lockedItem->refresh();
+        });
+    }
+
+    public function rejectItem(PurchaseRequestItem $item, string $stage, string $note): ?PurchaseRequestItem
+    {
+        $allowedStatuses = [
+            'logistic' => ['submitted', 'logistic_checked'],
+            'chief_mechanic' => ['logistic_checked', 'waiting_manager_camp'],
+            'manager_camp' => ['waiting_manager_camp'],
+            'director' => ['waiting_director'],
+        ];
+
+        return $this->transitionItemWithLock($item, function (PurchaseRequestItem $lockedItem) use ($stage, $note, $allowedStatuses) {
+            if (! in_array($lockedItem->status, $allowedStatuses[$stage] ?? [], true)) {
+                return false;
+            }
+
+            $updates = [
+                'status' => 'rejected',
+                'rejection_note' => $note,
+            ];
+
+            if ($stage === 'logistic') {
+                $updates['logistic_approval_status'] = 'rejected';
+                $updates['equipment_approval_status'] = 'rejected';
+            }
+
+            if ($stage === 'chief_mechanic') {
+                $updates['chief_mechanic_approval_status'] = 'rejected';
+                $updates['ppic_approval_status'] = 'rejected';
+            }
+
+            if ($stage === 'manager_camp') {
+                $updates['manager_camp_approval_status'] = 'rejected';
+            }
+
+            if ($stage === 'director') {
+                $updates['director_approval_status'] = 'rejected';
+            }
+
+            $lockedItem->update($updates);
+
+            return true;
+        });
+    }
+
     public function syncApprovalStatus(PurchaseRequest $purchaseRequest): void
     {
         $purchaseRequest->update($this->approvalState($purchaseRequest));

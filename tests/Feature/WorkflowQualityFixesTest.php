@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Http\Controllers\InventoryWorkflowController;
+use App\Http\Controllers\Inventory\PurchaseRequestApprovalController;
 use App\Models\Camp;
 use App\Models\Company;
 use App\Models\InventoryItem;
@@ -25,12 +25,12 @@ class WorkflowQualityFixesTest extends TestCase
 
     public function test_order_request_rejection_requires_a_reason(): void
     {
-        $controller = app(InventoryWorkflowController::class);
-        $method = new ReflectionMethod($controller, 'rejectPurchaseRequestItem');
+        $controller = app(PurchaseRequestApprovalController::class);
+        $method = new ReflectionMethod($controller, 'reject');
         $method->setAccessible(true);
 
         $this->expectException(ValidationException::class);
-        $method->invoke($controller, Request::create('/', 'POST'), new PurchaseRequestItem(), 'logistic');
+        $method->invoke($controller, Request::create('/', 'POST'), new PurchaseRequestItem, 'logistic');
     }
 
     public function test_manual_min_max_is_used_for_non_planning_items(): void

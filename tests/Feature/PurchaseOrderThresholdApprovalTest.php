@@ -22,6 +22,20 @@ class PurchaseOrderThresholdApprovalTest extends TestCase
         [$purchasing, $headPurchasing, $ppic] = $this->approvalUsers();
         $purchaseOrder = $this->purchaseOrder(10000000);
 
+        $this->actingAs($purchasing)
+            ->get(route('purchase-orders'))
+            ->assertOk()
+            ->assertSee($purchaseOrder->number);
+
+        $this->actingAs($purchasing)
+            ->get(route('purchase-orders.review', $purchaseOrder))
+            ->assertOk()
+            ->assertSee($purchaseOrder->number);
+
+        $this->actingAs($purchasing)
+            ->get(route('purchase-orders.edit', $purchaseOrder))
+            ->assertOk();
+
         $this->actingAs($purchasing)->post(route('purchase-orders.propose', $purchaseOrder))->assertSessionHas('success');
         $this->actingAs($headPurchasing)->post(route('purchase-orders.check', $purchaseOrder->fresh()))->assertSessionHas('success');
 

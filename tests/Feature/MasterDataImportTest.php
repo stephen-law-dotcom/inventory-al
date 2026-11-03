@@ -20,6 +20,22 @@ class MasterDataImportTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_dedicated_controller_renders_all_master_pages_and_create_forms(): void
+    {
+        $admin = $this->createAdmin();
+        $types = ['companies', 'camps', 'vendors', 'units', 'item-categories', 'items', 'uoms', 'users', 'roles'];
+
+        foreach ($types as $type) {
+            $this->actingAs($admin)
+                ->get(route('master.'.$type))
+                ->assertOk();
+
+            $this->actingAs($admin)
+                ->get(route('master.create', $type))
+                ->assertOk();
+        }
+    }
+
     public function test_xlsx_master_import_reads_headings_and_rows(): void
     {
         $admin = $this->createAdmin();

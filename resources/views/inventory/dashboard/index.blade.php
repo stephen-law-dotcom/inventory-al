@@ -226,7 +226,7 @@
                         @if ($canViewPurchaseOrders)<div class="kpi-card"><div class="kpi-label"><span>PO berjalan</span><span class="kpi-icon">PO</span></div><strong>{{ $activePo->count() }}</strong><small>{{ $purchaseOrders->where('status', 'on_progress')->count() }} on progress, {{ $receivingPo->count() }} submitted/terima</small></div>@endif
                         @if ($canViewStock)<div class="kpi-card"><div class="kpi-label"><span>{{ $isCampScoped ? 'Perlu dipenuhi' : 'Perlu order' }}</span><span class="kpi-icon">ST</span></div><strong>{{ $criticalCount }}</strong><small>{{ $safeCount }} aman dari {{ $inventoryRows->count() }} barang{{ $isCampScoped ? ' di site' : ' terpantau' }}</small></div>@endif
                         @if ($canSeePrices && $canViewPurchaseOrders)
-                            <div class="kpi-card"><div class="kpi-label"><span>Nilai PO aktif</span><span class="kpi-icon">Rp </span></div><strong class="kpi-money">Rp {{ number_format($openPoValue, 0, ',', '.') }}</strong><small>{{ $dashboardPeriodLabel }} Rp{{ number_format($periodPoValue, 0, ',', '.') }}</small></div>
+                            <div class="kpi-card"><div class="kpi-label"><span>Nilai PO aktif</span><span class="kpi-icon">Rp </span></div><strong class="kpi-money">Rp {{ number_format($openPoValue, 0, ',', '.') }}</strong><small>{{ $dashboardPeriodLabel }} Rp {{ number_format($periodPoValue, 0, ',', '.') }}</small></div>
                         @elseif ($canViewUsage)
                             <div class="kpi-card"><div class="kpi-label"><span>Pemakaian</span><span class="kpi-icon">US</span></div><strong>{{ number_format($periodUsageQty, 0, ',', '.') }}</strong><small>Qty tercatat - {{ $dashboardPeriodLabel }}</small></div>
                         @endif
@@ -356,7 +356,7 @@
                                         </td>
                                         <td>{{ $pr->camp?->name ?? '-' }}</td>
                                         <td><span class="pill {{ in_array($pr->status, ['rejected'], true) ? 'bad' : (in_array($pr->status, ['goods_received', 'po_issued'], true) ? 'ok' : 'wait') }}">{{ $workflowStatusLabel($pr->status) }}</span></td>
-                                        @if ($canSeePrices)<td class="price">Rp{{ number_format(max($pr->final_total, $pr->estimated_total), 0, ',', '.') }}</td>@endif
+                                        @if ($canSeePrices)<td class="price">Rp {{ number_format(max($pr->final_total, $pr->estimated_total), 0, ',', '.') }}</td>@endif
                                     </tr>
                                 @empty
                                     <tr><td colspan="{{ $canSeePrices ? 4 : 3 }}">Belum ada order request.</td></tr>

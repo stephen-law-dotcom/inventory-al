@@ -541,10 +541,24 @@ class ReportService
 
     private function inventoryPlanning(array $filters): array
     {
-        $models = $this->itemQuery($filters)->withSum(['usageLogs as usage_logs_sum_quantity' => fn ($q) => $q->whereDate('used_at', '>=', now()->subDays(365)->toDateString())], 'quantity')->withSum('campStocks', 'quantity')->get()->filter->usesInventoryPlanning()->values();
+        $models = $this->itemQuery($filters)
+            ->with([
+                'purchaseOrderItems.purchaseOrder',
+                'purchaseOrderItems.goodsReceiptItems.goodsReceipt',
+                'purchaseOrderItems.dispatchItems.receiptItems.siteReceipt',
+            ])
+            ->withSum(['usageLogs as usage_logs_sum_quantity' => fn ($q) => $q->whereDate('used_at', '>=', now()->subDays(364)->toDateString())], 'quantity')
+            ->withSum('campStocks', 'quantity')
+            ->get()
+            ->filter->usesInventoryPlanning()
+            ->values();
         $rows = $models->map(fn ($item) => [
             'sku' => $item->sku, 'item' => $item->name, 'demand' => $this->qty($item->annualDemand(), $item->uom),
-            'lead_time' => $item->lead_time_days.' hari', 'safety' => $this->qty($item->safety_stock, $item->uom),
+            'average_daily' => $this->qty($item->averageDailyDemand(), $item->uom),
+            'maximum_daily' => $this->qty($item->maximumDailyDemand(), $item->uom),
+            'average_lead_time' => $this->number($item->averageLeadTimeDays()).' hari',
+            'maximum_lead_time' => $this->number($item->maximumLeadTimeDays()).' hari',
+            'safety' => $this->qty($item->safetyStockLevel(), $item->uom),
             'eoq' => $this->qty($item->eoq(), $item->uom), 'rop' => $this->qty($item->minimumStockLevel(), $item->uom),
             'maximum' => $this->qty($item->maximumStockLevel(), $item->uom),
             'warehouse' => $this->qty($item->warehouseStock(), $item->uom), 'camp' => $this->qty($item->campStock(), $item->uom),
@@ -555,7 +569,11 @@ class ReportService
 
         return $this->payload('Perencanaan EOQ / ROP Consumable', 'Pengingat pembelian berdasarkan posisi stok gabungan gudang, camp, perjalanan, dan PO aktif.', [
             ['key' => 'sku', 'label' => 'SKU'], ['key' => 'item', 'label' => 'Barang'],
-            ['key' => 'demand', 'label' => 'Demand / Tahun', 'align' => 'right'], ['key' => 'lead_time', 'label' => 'Lead Time', 'align' => 'right'],
+            ['key' => 'demand', 'label' => 'Demand / Tahun', 'align' => 'right'],
+            ['key' => 'average_daily', 'label' => 'Rata-rata / Hari', 'align' => 'right'],
+            ['key' => 'maximum_daily', 'label' => 'Maksimum / Hari', 'align' => 'right'],
+            ['key' => 'average_lead_time', 'label' => 'Lead Time Rata-rata', 'align' => 'right'],
+            ['key' => 'maximum_lead_time', 'label' => 'Lead Time Maksimum', 'align' => 'right'],
             ['key' => 'safety', 'label' => 'Safety Stock', 'align' => 'right'], ['key' => 'eoq', 'label' => 'EOQ', 'align' => 'right'],
             ['key' => 'rop', 'label' => 'ROP / Min', 'align' => 'right'], ['key' => 'maximum', 'label' => 'Max', 'align' => 'right'],
             ['key' => 'warehouse', 'label' => 'Gudang', 'align' => 'right'], ['key' => 'camp', 'label' => 'Camp', 'align' => 'right'],

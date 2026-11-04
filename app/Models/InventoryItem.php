@@ -10,6 +10,10 @@ class InventoryItem extends Model
 
     private ?float $cachedOutstandingPurchaseOrderQuantity = null;
 
+    private ?float $cachedMaximumDailyDemand = null;
+
+    private ?array $cachedHistoricalLeadTimeDays = null;
+
     protected $casts = [
         'minimum_stock' => 'integer',
         'maximum_stock' => 'integer',
@@ -67,7 +71,7 @@ class InventoryItem extends Model
         }
 
         return (float) $this->usageLogs()
-            ->whereDate('used_at', '>=', now()->subDays(365)->toDateString())
+            ->whereDate('used_at', '>=', now()->subDays(364)->toDateString())
             ->sum('quantity');
     }
 
@@ -77,14 +81,79 @@ class InventoryItem extends Model
             return 0;
         }
 
+        $historical = $this->historicalAnnualDemand();
+        if ($historical > 0) {
+            return $historical;
+        }
+
         $forecast = (float) $this->forecast_annual_demand;
 
-        return $forecast > 0 ? $forecast : $this->historicalAnnualDemand();
+        return $forecast > 0 ? $forecast : 0;
     }
 
     public function averageDailyDemand(): float
     {
         return $this->annualDemand() / 365;
+    }
+
+    public function maximumDailyDemand(): float
+    {
+        if ($this->cachedMaximumDailyDemand !== null) {
+            return $this->cachedMaximumDailyDemand;
+        }
+
+        $maximum = $this->usageLogs()
+            ->whereDate('used_at', '>=', now()->subDays(364)->toDateString())
+            ->selectRaw('DATE(used_at) as usage_date, SUM(quantity) as daily_quantity')
+            ->groupByRaw('DATE(used_at)')
+            ->orderByDesc('daily_quantity')
+            ->value('daily_quantity');
+
+        return $this->cachedMaximumDailyDemand = (float) ($maximum ?? 0);
+    }
+
+    public function averageLeadTimeDays(): float
+    {
+        $history = $this->historicalLeadTimeDays();
+
+        return $history !== []
+            ? array_sum($history) / count($history)
+            : (float) $this->lead_time_days;
+    }
+
+    public function maximumLeadTimeDays(): float
+    {
+        $history = $this->historicalLeadTimeDays();
+
+        return $history !== [] ? (float) max($history) : (float) $this->lead_time_days;
+    }
+
+    public function safetyStockLevel(): float
+    {
+        $historicalDemand = $this->historicalAnnualDemand();
+        $maximumDailyDemand = $this->maximumDailyDemand();
+        $leadTimes = $this->historicalLeadTimeDays();
+
+        if ($historicalDemand <= 0 || $maximumDailyDemand <= 0 || $leadTimes === []) {
+            return (float) $this->safety_stock;
+        }
+
+        $averageDailyDemand = $historicalDemand / 365;
+        $averageLeadTime = array_sum($leadTimes) / count($leadTimes);
+        $maximumLeadTime = max($leadTimes);
+
+        return max(
+            0,
+            ($maximumDailyDemand * $maximumLeadTime)
+                - ($averageDailyDemand * $averageLeadTime)
+        );
+    }
+
+    public function usesHistoricalPlanningData(): bool
+    {
+        return $this->historicalAnnualDemand() > 0
+            && $this->maximumDailyDemand() > 0
+            && $this->historicalLeadTimeDays() !== [];
     }
 
     public function eoq(): float
@@ -110,7 +179,7 @@ class InventoryItem extends Model
             return 0;
         }
 
-        return ($this->averageDailyDemand() * (int) $this->lead_time_days) + (float) $this->safety_stock;
+        return ($this->averageDailyDemand() * $this->averageLeadTimeDays()) + $this->safetyStockLevel();
     }
 
     public function minimumStockLevel(): int
@@ -215,6 +284,47 @@ class InventoryItem extends Model
         }
 
         return in_array(strtolower(trim((string) $this->category)), ['consumable', 'solar'], true);
+    }
+
+    private function historicalLeadTimeDays(): array
+    {
+        if ($this->cachedHistoricalLeadTimeDays !== null) {
+            return $this->cachedHistoricalLeadTimeDays;
+        }
+
+        $purchaseOrderItems = $this->relationLoaded('purchaseOrderItems')
+            ? $this->purchaseOrderItems
+            : $this->purchaseOrderItems()
+                ->with([
+                    'purchaseOrder:id,ordered_at',
+                    'goodsReceiptItems.goodsReceipt:id,received_at',
+                    'dispatchItems.receiptItems.siteReceipt:id,received_at',
+                ])
+                ->get();
+
+        return $this->cachedHistoricalLeadTimeDays = $purchaseOrderItems
+            ->map(function (PurchaseOrderItem $item) {
+                $orderedAt = $item->purchaseOrder?->ordered_at;
+                if (! $orderedAt) {
+                    return null;
+                }
+
+                $receivedAt = $item->goodsReceiptItems
+                    ->pluck('goodsReceipt.received_at')
+                    ->merge($item->dispatchItems->flatMap->receiptItems->pluck('siteReceipt.received_at'))
+                    ->filter()
+                    ->sort()
+                    ->first();
+
+                if (! $receivedAt || $receivedAt->isBefore($orderedAt)) {
+                    return null;
+                }
+
+                return (float) $orderedAt->diffInDays($receivedAt);
+            })
+            ->filter(fn ($days) => $days !== null)
+            ->values()
+            ->all();
     }
 
     public function usesShrinkageTolerance(): bool

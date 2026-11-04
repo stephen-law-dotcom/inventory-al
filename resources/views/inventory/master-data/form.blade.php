@@ -372,14 +372,28 @@
                 </div>
                 <div data-inventory-planning-fields>
                     <div class="row">
-                        <label>Forecast kebutuhan tahunan <input name="forecast_annual_demand" type="number" min="0" step="0.01" value="{{ old('forecast_annual_demand', $record->forecast_annual_demand ?? 0) }}"></label>
-                        <label>Lead time pembelian (hari) <input name="lead_time_days" type="number" min="0" value="{{ old('lead_time_days', $record->lead_time_days ?? 0) }}"></label>
+                        <label>Forecast tahunan fallback <input name="forecast_annual_demand" type="number" min="0" step="0.01" value="{{ old('forecast_annual_demand', $record->forecast_annual_demand ?? 0) }}"></label>
+                        <label>Lead time fallback (hari) <input name="lead_time_days" type="number" min="0" value="{{ old('lead_time_days', $record->lead_time_days ?? 0) }}"></label>
                     </div>
                     <div class="row">
-                        <label>Safety stock <input name="safety_stock" type="number" min="0" step="0.01" value="{{ old('safety_stock', $record->safety_stock ?? 0) }}"></label>
+                        <label>Safety stock fallback <input name="safety_stock" type="number" min="0" step="0.01" value="{{ old('safety_stock', $record->safety_stock ?? 0) }}"></label>
                         <label>Biaya pemesanan <input name="ordering_cost" type="number" min="0" step="0.01" value="{{ old('ordering_cost', $record->ordering_cost ?? 0) }}"></label>
                     </div>
                     <label>Biaya simpan/unit/tahun <input name="holding_cost_per_unit" type="number" min="0" step="0.01" value="{{ old('holding_cost_per_unit', $record->holding_cost_per_unit ?? 0) }}"></label>
+                    @if (($record ?? null)?->exists && $record->usesInventoryPlanning())
+                        <div class="row">
+                            <label>Kebutuhan tahunan <input value="{{ number_format($record->annualDemand(), 2, ',', '.') }} {{ $record->uom }}" readonly></label>
+                            <label>Pemakaian maksimum/hari <input value="{{ number_format($record->maximumDailyDemand(), 2, ',', '.') }} {{ $record->uom }}" readonly></label>
+                        </div>
+                        <div class="row">
+                            <label>Lead time rata-rata <input value="{{ number_format($record->averageLeadTimeDays(), 2, ',', '.') }} hari" readonly></label>
+                            <label>Lead time maksimum <input value="{{ number_format($record->maximumLeadTimeDays(), 2, ',', '.') }} hari" readonly></label>
+                        </div>
+                        <div class="row">
+                            <label>Safety stock hasil <input value="{{ number_format($record->safetyStockLevel(), 2, ',', '.') }} {{ $record->uom }}" readonly></label>
+                            <label>ROP hasil <input value="{{ number_format($record->reorderPoint(), 2, ',', '.') }} {{ $record->uom }}" readonly></label>
+                        </div>
+                    @endif
                 </div>
                 <label>Toleransi susut cairan (%)
                     <input name="shrinkage_tolerance_percent" type="number" min="0" max="100" step="0.01" value="{{ old('shrinkage_tolerance_percent', $record->shrinkage_tolerance_percent ?? 0) }}" placeholder="Contoh: 0.50">

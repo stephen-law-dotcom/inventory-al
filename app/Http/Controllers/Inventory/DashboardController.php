@@ -65,9 +65,10 @@ class DashboardController extends Controller
             ->get();
         $items = InventoryItem::with([
             'itemCategory', 'purchaseOrderItems.purchaseOrder',
-            'purchaseOrderItems.goodsReceiptItems', 'purchaseOrderItems.dispatchItems.receiptItems',
+            'purchaseOrderItems.goodsReceiptItems.goodsReceipt',
+            'purchaseOrderItems.dispatchItems.receiptItems.siteReceipt',
         ])
-            ->withSum(['usageLogs as usage_logs_sum_quantity' => fn ($query) => $query->whereDate('used_at', '>=', now()->subDays(365)->toDateString())], 'quantity')
+            ->withSum(['usageLogs as usage_logs_sum_quantity' => fn ($query) => $query->whereDate('used_at', '>=', now()->subDays(364)->toDateString())], 'quantity')
             ->withSum('campStocks', 'quantity')
             ->orderBy('name')
             ->get();

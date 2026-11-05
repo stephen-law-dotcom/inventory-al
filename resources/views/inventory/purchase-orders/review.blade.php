@@ -21,6 +21,16 @@
     };
     $mainDirectorName = config('procurement.main_director_name', 'Haryanto');
     $isMainDirectorUser = strtolower((string) auth()->user()?->email) === strtolower((string) config('procurement.main_director_email'));
+    $quantityApprovalFormId = match (true) {
+        $purchaseOrder->status === 'draft' && $purchaseOrder->proposed_by && ! $purchaseOrder->checked_by
+            && auth()->user()?->hasPermission('purchase_orders.check') => 'po-check-form',
+        $purchaseOrder->status === 'draft' && $purchaseOrder->checked_by && ! $purchaseOrder->ppic_reviewed_by
+            && ! $purchaseOrder->approved_by && auth()->user()?->hasPermission('purchase_orders.ppic_review') => 'po-ppic-form',
+        $purchaseOrder->status === 'draft' && $purchaseOrder->requires_main_director_approval
+            && $purchaseOrder->ppic_reviewed_by && ! $purchaseOrder->approved_by && $isMainDirectorUser
+            && auth()->user()?->hasPermission('purchase_orders.approve') => 'po-director-form',
+        default => null,
+    };
 @endphp
 <!doctype html>
 <html lang="id">
@@ -161,6 +171,9 @@
         .reject-form button:hover { background:#ffe4df; }
         .reject-form .decline-button { background:var(--red); border-color:var(--red); color:#fff; }
         .reject-form .decline-button:hover { background:#a92c25; }
+        .approval-form { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+        .approval-form input { min-width:260px; min-height:40px; border:1px solid var(--line); border-radius:6px; padding:9px 11px; font:inherit; }
+        .approval-qty { width:90px; min-height:38px; border:1px solid var(--line); border-radius:6px; padding:7px 9px; font:inherit; }
         .invoice-list { display:grid; gap:12px; }
         .invoice-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(280px,.9fr); gap:14px; align-items:end; padding:14px; border:1px solid var(--line); border-radius:7px; background:#f9fbfc; }
         .invoice-form { display:flex; gap:8px; align-items:end; }
@@ -369,7 +382,11 @@
                         <form method="post" action="{{ route('purchase-orders.propose', $purchaseOrder) }}" onsubmit="return confirm('Ajukan {{ $purchaseOrder->number }} ke proses approval? Setelah diajukan, draft tidak dapat diedit.')">@csrf<button>Ajukan Approval PO</button></form>
                     @endif
                     @if ($purchaseOrder->status === 'draft' && $purchaseOrder->proposed_by && auth()->user()?->hasPermission('purchase_orders.check') && ! $purchaseOrder->checked_by)
-                        <form method="post" action="{{ route('purchase-orders.check', $purchaseOrder) }}">@csrf<button>Periksa PO</button></form>
+                        <form id="po-check-form" class="approval-form" method="post" action="{{ route('purchase-orders.check', $purchaseOrder) }}">
+                            @csrf
+                            <input name="quantity_change_reason" value="{{ old('quantity_change_reason') }}" placeholder="Alasan jika qty diubah">
+                            <button>Periksa PO</button>
+                        </form>
                         <form class="reject-form" method="post" action="{{ route('purchase-orders.reject', $purchaseOrder) }}">
                             @csrf
                             <input name="rejection_note" placeholder="Alasan pengembalian atau penolakan" required maxlength="2000">
@@ -378,7 +395,11 @@
                         </form>
                     @endif
                     @if ($purchaseOrder->status === 'draft' && auth()->user()?->hasPermission('purchase_orders.ppic_review') && $purchaseOrder->checked_by && ! $purchaseOrder->ppic_reviewed_by && ! $purchaseOrder->approved_by)
-                        <form method="post" action="{{ route('purchase-orders.ppic-review', $purchaseOrder) }}" onsubmit="return confirm('{{ $purchaseOrder->requires_main_director_approval ? 'Selesaikan review PPIC dan teruskan PO ini ke Direktur Utama?' : 'Setujui PO ini berdasarkan delegasi sampai Rp10 juta?' }}')">@csrf<button>{{ $purchaseOrder->requires_main_director_approval ? 'Selesaikan Review PPIC' : 'Setujui PO (Delegasi)' }}</button></form>
+                        <form id="po-ppic-form" class="approval-form" method="post" action="{{ route('purchase-orders.ppic-review', $purchaseOrder) }}" onsubmit="return confirm('Selesaikan review menggunakan kuantitas dan nilai terbaru? Sistem akan menghitung ulang jalur batas Rp10 juta.')">
+                            @csrf
+                            <input name="quantity_change_reason" value="{{ old('quantity_change_reason') }}" placeholder="Alasan jika qty diubah">
+                            <button>{{ $purchaseOrder->requires_main_director_approval ? 'Selesaikan Review PPIC' : 'Setujui PO (Delegasi)' }}</button>
+                        </form>
                         <form class="reject-form" method="post" action="{{ route('purchase-orders.reject', $purchaseOrder) }}">
                             @csrf
                             <input name="rejection_note" placeholder="Alasan pengembalian atau penolakan" required maxlength="2000">
@@ -387,7 +408,11 @@
                         </form>
                     @endif
                     @if ($purchaseOrder->status === 'draft' && auth()->user()?->hasPermission('purchase_orders.approve') && $isMainDirectorUser && $purchaseOrder->requires_main_director_approval && $purchaseOrder->ppic_reviewed_by && ! $purchaseOrder->approved_by)
-                        <form method="post" action="{{ route('purchase-orders.approve', $purchaseOrder) }}" onsubmit="return confirm('Berikan persetujuan akhir untuk PO {{ $purchaseOrder->number }}?')">@csrf<button>Setujui PO</button></form>
+                        <form id="po-director-form" class="approval-form" method="post" action="{{ route('purchase-orders.approve', $purchaseOrder) }}" onsubmit="return confirm('Berikan persetujuan akhir menggunakan kuantitas dan nilai terbaru?')">
+                            @csrf
+                            <input name="quantity_change_reason" value="{{ old('quantity_change_reason') }}" placeholder="Alasan jika qty diubah">
+                            <button>Setujui PO</button>
+                        </form>
                         <form class="reject-form" method="post" action="{{ route('purchase-orders.reject', $purchaseOrder) }}">
                             @csrf
                             <input name="rejection_note" placeholder="Alasan pengembalian atau penolakan" required maxlength="2000">
@@ -429,7 +454,14 @@
                                         <div class="item-note">{{ $item->requestItem->specification }}</div>
                                     @endif
                                 </td>
-                                <td>{{ number_format($item->quantity_ordered, 0, ',', '.') }} {{ $item->uom }}</td>
+                                <td>
+                                    @if ($quantityApprovalFormId)
+                                        <input class="approval-qty" type="number" name="quantities[{{ $item->id }}]" value="{{ old('quantities.'.$item->id, $item->quantity_ordered) }}" min="1" max="{{ $item->quantity_ordered }}" form="{{ $quantityApprovalFormId }}" aria-label="Qty {{ $item->inventoryItem?->name ?: $item->description }}">
+                                        {{ $item->uom }}
+                                    @else
+                                        {{ number_format($item->quantity_ordered, 0, ',', '.') }} {{ $item->uom }}
+                                    @endif
+                                </td>
                                 @if ($canSeePrices)
                                     <td class="number">{{ \App\Support\Currency::format($item->unit_price, $purchaseOrder->currency_code) }}</td>
                                     <td class="number">{{ \App\Support\Currency::format($item->total, $purchaseOrder->currency_code) }}</td>

@@ -177,11 +177,14 @@
                                     <div class="item-name">{{ $item->inventoryItem->sku }} - {{ $item->inventoryItem->name }}</div>
                                     @if ($item->requestItem?->specification)<div class="spec">{{ $item->requestItem->specification }}</div>@endif
                                 </td>
-                                <td>{{ number_format($item->quantity_ordered, 0, ',', '.') }} {{ $item->uom }}</td>
+                                <td>
+                                    <input type="number" name="quantities[{{ $item->id }}]" value="{{ old('quantities.'.$item->id, $item->quantity_ordered) }}" min="1" max="{{ $draftQuantityLimits[$item->id] ?? $item->quantity_ordered }}" step="1" data-quantity-input aria-label="Qty {{ $item->inventoryItem->name }}">
+                                    {{ $item->uom }}
+                                </td>
                                 <td>{{ $item->brand_name ?: '-' }}<div class="spec">{{ $item->part_number ?: 'No part belum diisi' }}</div></td>
                                 <td>{{ $purchaseOrder->ordered_at->diffInDays($purchaseOrder->expected_at ?? $purchaseOrder->ordered_at) }} hari</td>
                                 @if ($canSeePrices)
-                                    <td class="price"><input type="number" name="unit_prices[{{ $item->id }}]" value="{{ old('unit_prices.'.$item->id, number_format((float) $item->unit_price, 2, '.', '')) }}" min="0.01" step="0.01" data-unit-price data-quantity="{{ $item->quantity_ordered }}" aria-label="Harga satuan {{ $item->inventoryItem->name }}"></td>
+                                    <td class="price"><input type="number" name="unit_prices[{{ $item->id }}]" value="{{ old('unit_prices.'.$item->id, number_format((float) $item->unit_price, 2, '.', '')) }}" min="0" step="0.01" data-unit-price data-quantity="{{ $item->quantity_ordered }}" aria-label="Harga satuan {{ $item->inventoryItem->name }}"></td>
                                     <td><strong data-row-total>{{ \App\Support\Currency::format($item->total, $purchaseOrder->currency_code) }}</strong></td>
                                 @endif
                             </tr>
@@ -216,7 +219,8 @@
     function refreshTotals() {
         let subtotal = 0;
         form.querySelectorAll('[data-unit-price]').forEach((input) => {
-            const total = Number(input.value || 0) * Number(input.dataset.quantity || 0);
+            const quantity = input.closest('tr').querySelector('[data-quantity-input]');
+            const total = Number(input.value || 0) * Number(quantity?.value || input.dataset.quantity || 0);
             subtotal += total;
             input.closest('tr').querySelector('[data-row-total]').textContent = `${currencyPrefix}${currency.format(total)}`;
         });
@@ -226,6 +230,13 @@
         form.querySelector('[data-financial-summary]').textContent = `Subtotal ${currencyPrefix}${currency.format(subtotal)} | Diskon ${currencyPrefix}${currency.format(discount)} | PPN ${currencyPrefix}${currency.format(ppn)}`;
     }
     form.addEventListener('input', refreshTotals);
+    form.addEventListener('submit', (event) => {
+        const hasZeroPrice = Array.from(form.querySelectorAll('[data-unit-price]'))
+            .some((input) => Number(input.value) === 0);
+        if (hasZeroPrice && ! window.confirm('Terdapat barang dengan harga 0. Pastikan nilai tersebut sudah benar. Lanjutkan?')) {
+            event.preventDefault();
+        }
+    });
     refreshTotals();
 </script>
 @endif

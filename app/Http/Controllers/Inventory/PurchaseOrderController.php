@@ -105,12 +105,16 @@ class PurchaseOrderController extends Controller
             'items.requestItem.inventoryItem',
             'items.requestItem.selectedQuotation.vendor',
             'items.inventoryItem',
+            'items.vendorQuotation',
         ]);
         $this->ensureCanAccessCamp($purchaseOrder->purchaseRequest->camp);
 
         return view('inventory.purchase-orders.edit', [
             'purchaseOrder' => $purchaseOrder,
             'canSeePrices' => auth()->user()?->canSeePrices() ?? false,
+            'draftQuantityLimits' => $purchaseOrder->items->mapWithKeys(fn ($item) => [
+                $item->id => $this->purchaseOrderWorkflow->draftQuantityLimit($purchaseOrder, $item),
+            ]),
         ]);
     }
 
@@ -186,7 +190,9 @@ class PurchaseOrderController extends Controller
             'quotations' => ['nullable', 'array'],
             'quotations.*' => ['nullable', 'integer', 'exists:vendor_quotations,id'],
             'unit_prices' => ['nullable', 'array'],
-            'unit_prices.*' => ['nullable', 'numeric', 'min:0.01'],
+            'unit_prices.*' => ['nullable', 'numeric', 'min:0'],
+            'quantities' => ['nullable', 'array'],
+            'quantities.*' => ['nullable', 'integer', 'min:1'],
             'exchange_rates' => ['nullable', 'array'],
             'exchange_rates.*' => ['nullable', 'numeric', 'gt:0'],
             'reference_exchange_rates' => ['nullable', 'array'],
@@ -253,8 +259,14 @@ class PurchaseOrderController extends Controller
                         ]);
                     }
 
-                    $quantity = (int) $quotation->selected_quantity;
-                    if (! $quotation->is_selected || $quantity <= 0 || $quantity > $quotation->available_quantity || (float) $quotation->unit_price <= 0) {
+                    $allocatedQuantity = (int) $quotation->selected_quantity;
+                    $quantity = (int) ($data['quantities'][$quotation->id] ?? $allocatedQuantity);
+                    if (! $quotation->is_selected
+                        || $allocatedQuantity <= 0
+                        || $allocatedQuantity > $quotation->available_quantity
+                        || $quantity <= 0
+                        || $quantity > $allocatedQuantity
+                        || (float) $quotation->unit_price <= 0) {
                         throw ValidationException::withMessages([
                             'selected_quotations' => 'Alokasi vendor final untuk '.$requestItem->inventoryItem->name.' belum valid atau stoknya tidak mencukupi.',
                         ]);
@@ -323,7 +335,13 @@ class PurchaseOrderController extends Controller
                         ]);
                     }
 
-                    $quantity = (int) ($quotation->selected_quantity ?: $requestItem->approvedQuantity());
+                    $allocatedQuantity = (int) ($quotation->selected_quantity ?: $requestItem->approvedQuantity());
+                    $quantity = (int) ($data['quantities'][$quotation->id] ?? $allocatedQuantity);
+                    if ($quantity <= 0 || $quantity > $allocatedQuantity) {
+                        throw ValidationException::withMessages([
+                            'quantities.'.$quotation->id => 'Qty PO '.$requestItem->inventoryItem->name.' minimal 1 dan tidak boleh melebihi alokasi vendor.',
+                        ]);
+                    }
                     $unitPrice = (float) ($data['unit_prices'][$quotation->id] ?? $quotation->unit_price);
                     $itemTotal = $unitPrice * $quantity;
 
@@ -406,6 +424,13 @@ class PurchaseOrderController extends Controller
                     foreach ($items as $item) {
                         $requestItem = $item['requestItem'];
                         $quotation = $item['quotation'];
+                        if ($isPosting && (int) $item['quantity'] < (int) $quotation->selected_quantity) {
+                            $this->purchaseOrderWorkflow->splitVendorQuotationAllocation(
+                                $quotation,
+                                (int) $item['quantity'],
+                                'pembuatan PO '.$purchaseOrder->number
+                            );
+                        }
                         $purchaseOrder->items()->create([
                             'purchase_request_item_id' => $requestItem->id,
                             'vendor_quotation_id' => $quotation->id,
@@ -488,7 +513,9 @@ class PurchaseOrderController extends Controller
             'delivery_destination' => ['nullable', 'in:warehouse,direct_site'],
             'notes' => ['nullable', 'string', 'max:2000'],
             'unit_prices' => ['nullable', 'array'],
-            'unit_prices.*' => ['required', 'numeric', 'min:0.01'],
+            'unit_prices.*' => ['required', 'numeric', 'min:0'],
+            'quantities' => ['nullable', 'array'],
+            'quantities.*' => ['required', 'integer', 'min:1'],
             'discount_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'ppn_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'actual_exchange_rate' => ['nullable', 'numeric', 'gt:0'],
@@ -502,9 +529,13 @@ class PurchaseOrderController extends Controller
             unset($data['actual_exchange_rate'], $data['actual_exchange_rate_date']);
         }
 
-        DB::transaction(function () use ($data, $purchaseOrder) {
+        $quantityChanges = DB::transaction(function () use ($data, $purchaseOrder) {
             PurchaseOrder::whereKey($purchaseOrder->id)->lockForUpdate()->firstOrFail();
             $this->validatePurchaseOrderIntegrity($purchaseOrder);
+            $quantityChanges = $this->purchaseOrderWorkflow->applyDraftQuantityAdjustments(
+                $purchaseOrder,
+                $data['quantities'] ?? []
+            );
             $subtotal = 0.0;
             foreach ($purchaseOrder->items as $item) {
                 $unitPrice = (float) ($data['unit_prices'][$item->id] ?? $item->unit_price);
@@ -533,9 +564,18 @@ class PurchaseOrderController extends Controller
                 (float) ($data['discount_percent'] ?? 0),
                 (float) ($data['ppn_percent'] ?? 0)
             )));
+
+            if ($quantityChanges !== []) {
+                $this->syncPurchaseRequestAfterPurchaseOrderDraftChange($purchaseOrder->purchaseRequest()->firstOrFail());
+            }
+            $this->validatePurchaseOrderIntegrity($purchaseOrder->refresh());
+
+            return $quantityChanges;
         });
 
-        AuditLogger::log('purchase_order.updated', 'Draft purchase order diedit.', $purchaseOrder);
+        AuditLogger::log('purchase_order.updated', 'Draft purchase order diedit.', $purchaseOrder, [
+            'quantity_changes' => $quantityChanges,
+        ]);
 
         return redirect()->route('purchase-orders.review', $reviewRouteParameters)->with('success', 'Draft PO berhasil diperbarui.');
     }

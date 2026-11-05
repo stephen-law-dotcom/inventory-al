@@ -255,13 +255,16 @@
                                                 <div class="item-name">{{ $item->inventoryItem->sku }} - {{ $item->inventoryItem->name }}</div>
                                                 @if ($item->specification)<div class="spec">{{ $item->specification }}</div>@endif
                                             </td>
-                                            <td>{{ number_format($allocatedQuantity, 0, ',', '.') }} {{ $item->uom }}</td>
+                                            <td>
+                                                <input type="number" name="quantities[{{ $quotation->id }}]" value="{{ old('quantities.'.$quotation->id, $allocatedQuantity) }}" min="1" max="{{ $allocatedQuantity }}" step="1" data-quantity-input aria-label="Qty {{ $item->inventoryItem->name }}">
+                                                {{ $item->uom }}
+                                            </td>
                                             <td>{{ $quotation?->brand_name ?: '-' }}<div class="spec">{{ $quotation?->part_number ?: 'No part belum diisi' }}</div></td>
                                             <td>{{ $quotation?->lead_time_days ?? 0 }} hari</td>
                                             @if ($canSeePrices)
                                                 <td class="price">
                                                     <span class="original-price">{{ $currencyCode }}</span>
-                                                    <input type="number" name="unit_prices[{{ $quotation->id }}]" value="{{ old('unit_prices.'.$quotation->id, number_format((float) $quotation->unit_price, 2, '.', '')) }}" min="0.01" step="0.01" data-unit-price data-quantity="{{ $allocatedQuantity }}" data-currency="{{ $currencyCode }}" aria-label="Harga satuan {{ $item->inventoryItem->name }}">
+                                                    <input type="number" name="unit_prices[{{ $quotation->id }}]" value="{{ old('unit_prices.'.$quotation->id, number_format((float) $quotation->unit_price, 2, '.', '')) }}" min="0" step="0.01" data-unit-price data-quantity="{{ $allocatedQuantity }}" data-currency="{{ $currencyCode }}" aria-label="Harga satuan {{ $item->inventoryItem->name }}">
                                                 </td>
                                                 <td>
                                                     <strong data-row-total data-total="{{ $rowTotal }}" data-currency="{{ $currencyCode }}">{{ \App\Support\Currency::format(0, $currencyCode) }}</strong>
@@ -370,8 +373,9 @@
             const check = row.querySelector('[data-item-check]');
             const totalLabel = row.querySelector('[data-row-total]');
             const priceInput = row.querySelector('[data-unit-price]');
+            const quantityInput = row.querySelector('[data-quantity-input]');
             const rowTotal = priceInput
-                ? Number(priceInput.value || 0) * Number(priceInput.dataset.quantity || 0)
+                ? Number(priceInput.value || 0) * Number(quantityInput?.value || priceInput.dataset.quantity || 0)
                 : Number(totalLabel?.dataset.total || 0);
             const currencyCode = priceInput?.dataset.currency || totalLabel?.dataset.currency || 'IDR';
             const rowTotalIdr = rowTotal * rateFor(currencyCode);
@@ -461,6 +465,15 @@
         if (! selectedItems.length) {
             event.preventDefault();
             alert('Pilih minimal satu alokasi untuk dibuatkan PO.');
+            return;
+        }
+
+        const hasZeroPrice = Array.from(selectedItems).some((check) => {
+            const price = check.closest('[data-item-row]')?.querySelector('[data-unit-price]');
+            return price && Number(price.value) === 0;
+        });
+        if (hasZeroPrice && ! window.confirm('Terdapat barang dengan harga 0. Pastikan nilai tersebut sudah benar. Lanjutkan?')) {
+            event.preventDefault();
             return;
         }
 

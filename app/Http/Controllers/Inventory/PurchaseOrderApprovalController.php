@@ -31,7 +31,8 @@ class PurchaseOrderApprovalController extends Controller
                 return null;
             }
 
-            $this->validatePurchaseOrderIntegrity($lockedPurchaseOrder);
+            $this->purchaseOrderWorkflow->finalizeDraftAllocations($lockedPurchaseOrder);
+            $this->validatePurchaseOrderIntegrity($lockedPurchaseOrder->refresh());
             $lockedPurchaseOrder->update([
                 'proposed_by' => auth()->id(),
                 'proposed_at' => now(),
@@ -40,6 +41,10 @@ class PurchaseOrderApprovalController extends Controller
                 'rejection_stage' => null,
                 'rejection_note' => null,
             ]);
+
+            $this->purchaseRequestWorkflow->syncAfterPurchaseOrderStatusChange(
+                $lockedPurchaseOrder->purchaseRequest()->firstOrFail()
+            );
 
             return $lockedPurchaseOrder->refresh();
         });
@@ -52,13 +57,14 @@ class PurchaseOrderApprovalController extends Controller
         return back()->with('success', 'PO diajukan kepada Kepala Divisi Purchasing untuk diperiksa.');
     }
 
-    public function checkPurchaseOrder(PurchaseOrder $purchaseOrder)
+    public function checkPurchaseOrder(Request $request, PurchaseOrder $purchaseOrder)
     {
         $this->ensurePermission('purchase_orders.check');
         $purchaseOrder->loadMissing('purchaseRequest.camp');
         $this->ensureCanAccessCamp($purchaseOrder->purchaseRequest->camp);
+        $data = $this->approvalQuantityData($request);
 
-        $purchaseOrder = DB::transaction(function () use ($purchaseOrder) {
+        $result = DB::transaction(function () use ($purchaseOrder, $data) {
             $lockedPurchaseOrder = PurchaseOrder::lockForUpdate()->findOrFail($purchaseOrder->id);
             if ($lockedPurchaseOrder->status !== 'draft'
                 || ! $lockedPurchaseOrder->proposed_by
@@ -67,6 +73,7 @@ class PurchaseOrderApprovalController extends Controller
             }
 
             $this->validatePurchaseOrderIntegrity($lockedPurchaseOrder);
+            $quantityChanges = $this->applyApprovalQuantityChanges($lockedPurchaseOrder, $data);
             $approvalAmountIdr = $this->purchaseOrderApprovalAmountIdr($lockedPurchaseOrder);
             $requiresMainDirector = $approvalAmountIdr > $this->purchaseOrderDirectorThresholdIdr();
             $lockedPurchaseOrder->update([
@@ -80,25 +87,29 @@ class PurchaseOrderApprovalController extends Controller
                 'requires_main_director_approval' => $requiresMainDirector,
             ]);
 
-            return $lockedPurchaseOrder->refresh();
+            return [$lockedPurchaseOrder->refresh(), $quantityChanges];
         });
 
-        if (! $purchaseOrder) {
+        if (! $result) {
             return back()->with('error', 'PO belum diajukan atau sudah diperiksa pengguna lain.');
         }
+
+        [$purchaseOrder, $quantityChanges] = $result;
+        $this->logApprovalQuantityChanges($purchaseOrder, $quantityChanges, $data['quantity_change_reason'] ?? null);
 
         AuditLogger::log('purchase_order.checked', 'Purchase order diperiksa Kepala Divisi Purchasing.', $purchaseOrder);
 
         return back()->with('success', 'PO diperiksa dan diteruskan ke PPIC untuk review jalur persetujuan.');
     }
 
-    public function reviewPurchaseOrderByPpic(PurchaseOrder $purchaseOrder)
+    public function reviewPurchaseOrderByPpic(Request $request, PurchaseOrder $purchaseOrder)
     {
         $this->ensurePermission('purchase_orders.ppic_review');
         $purchaseOrder->loadMissing('purchaseRequest.camp');
         $this->ensureCanAccessCamp($purchaseOrder->purchaseRequest->camp);
+        $data = $this->approvalQuantityData($request);
 
-        $result = DB::transaction(function () use ($purchaseOrder) {
+        $result = DB::transaction(function () use ($purchaseOrder, $data) {
             $lockedPurchaseOrder = PurchaseOrder::lockForUpdate()->findOrFail($purchaseOrder->id);
             if ($lockedPurchaseOrder->status !== 'draft'
                 || ! $lockedPurchaseOrder->checked_by
@@ -108,22 +119,28 @@ class PurchaseOrderApprovalController extends Controller
             }
 
             $this->validatePurchaseOrderIntegrity($lockedPurchaseOrder);
-            $isDelegatedApproval = ! $lockedPurchaseOrder->requires_main_director_approval;
+            $quantityChanges = $this->applyApprovalQuantityChanges($lockedPurchaseOrder, $data);
+            $approvalAmountIdr = $this->purchaseOrderApprovalAmountIdr($lockedPurchaseOrder);
+            $requiresMainDirector = $approvalAmountIdr > $this->purchaseOrderDirectorThresholdIdr();
+            $isDelegatedApproval = ! $requiresMainDirector;
             $lockedPurchaseOrder->update([
                 'ppic_reviewed_by' => auth()->id(),
                 'ppic_reviewed_at' => now(),
                 'approved_by' => $isDelegatedApproval ? auth()->id() : null,
                 'approved_at' => $isDelegatedApproval ? now() : null,
+                'approval_amount_idr' => $approvalAmountIdr,
+                'requires_main_director_approval' => $requiresMainDirector,
             ]);
 
-            return [$lockedPurchaseOrder->refresh(), $isDelegatedApproval];
+            return [$lockedPurchaseOrder->refresh(), $isDelegatedApproval, $quantityChanges];
         });
 
         if (! $result) {
             return back()->with('error', 'PO belum diperiksa Kepala Purchasing atau sudah direview pengguna lain.');
         }
 
-        [$purchaseOrder, $isDelegatedApproval] = $result;
+        [$purchaseOrder, $isDelegatedApproval, $quantityChanges] = $result;
+        $this->logApprovalQuantityChanges($purchaseOrder, $quantityChanges, $data['quantity_change_reason'] ?? null);
         if ($isDelegatedApproval) {
             AuditLogger::log('purchase_order.approved_delegated', 'Purchase order disetujui PPIC berdasarkan delegasi sampai Rp10 juta.', $purchaseOrder);
 
@@ -135,7 +152,7 @@ class PurchaseOrderApprovalController extends Controller
         return back()->with('success', 'Review PPIC selesai. PO diteruskan ke Haryanto sebagai Direktur Utama.');
     }
 
-    public function approvePurchaseOrder(PurchaseOrder $purchaseOrder)
+    public function approvePurchaseOrder(Request $request, PurchaseOrder $purchaseOrder)
     {
         $this->ensurePermission('purchase_orders.approve');
         if (! $this->isMainDirector(auth()->user())) {
@@ -143,8 +160,9 @@ class PurchaseOrderApprovalController extends Controller
         }
         $purchaseOrder->loadMissing('purchaseRequest.camp');
         $this->ensureCanAccessCamp($purchaseOrder->purchaseRequest->camp);
+        $data = $this->approvalQuantityData($request);
 
-        $purchaseOrder = DB::transaction(function () use ($purchaseOrder) {
+        $result = DB::transaction(function () use ($purchaseOrder, $data) {
             $lockedPurchaseOrder = PurchaseOrder::lockForUpdate()->findOrFail($purchaseOrder->id);
             if ($lockedPurchaseOrder->status !== 'draft'
                 || ! $lockedPurchaseOrder->checked_by
@@ -155,17 +173,23 @@ class PurchaseOrderApprovalController extends Controller
             }
 
             $this->validatePurchaseOrderIntegrity($lockedPurchaseOrder);
+            $quantityChanges = $this->applyApprovalQuantityChanges($lockedPurchaseOrder, $data);
+            $approvalAmountIdr = $this->purchaseOrderApprovalAmountIdr($lockedPurchaseOrder);
             $lockedPurchaseOrder->update([
                 'approved_by' => auth()->id(),
                 'approved_at' => now(),
+                'approval_amount_idr' => $approvalAmountIdr,
             ]);
 
-            return $lockedPurchaseOrder->refresh();
+            return [$lockedPurchaseOrder->refresh(), $quantityChanges];
         });
 
-        if (! $purchaseOrder) {
+        if (! $result) {
             return back()->with('error', 'PO belum selesai direview PPIC, tidak memerlukan Direktur Utama, atau sudah disetujui pengguna lain.');
         }
+
+        [$purchaseOrder, $quantityChanges] = $result;
+        $this->logApprovalQuantityChanges($purchaseOrder, $quantityChanges, $data['quantity_change_reason'] ?? null);
 
         AuditLogger::log('purchase_order.approved', 'Purchase order di atas Rp10 juta disetujui Haryanto sebagai Direktur Utama.', $purchaseOrder);
 
@@ -288,6 +312,47 @@ class PurchaseOrderApprovalController extends Controller
     private function validatePurchaseOrderIntegrity(PurchaseOrder $purchaseOrder): void
     {
         $this->purchaseOrderWorkflow->validateIntegrity($purchaseOrder);
+    }
+
+    private function approvalQuantityData(Request $request): array
+    {
+        return $request->validate([
+            'quantities' => ['nullable', 'array'],
+            'quantities.*' => ['required', 'integer', 'min:1'],
+            'quantity_change_reason' => ['nullable', 'string', 'max:2000'],
+        ]);
+    }
+
+    private function applyApprovalQuantityChanges(PurchaseOrder $purchaseOrder, array $data): array
+    {
+        $changes = $this->purchaseOrderWorkflow->applyApprovalQuantityAdjustments(
+            $purchaseOrder,
+            $data['quantities'] ?? [],
+            $data['quantity_change_reason'] ?? null
+        );
+
+        if ($changes !== []) {
+            $this->purchaseRequestWorkflow->syncAfterPurchaseOrderStatusChange(
+                $purchaseOrder->purchaseRequest()->firstOrFail()
+            );
+            $this->validatePurchaseOrderIntegrity($purchaseOrder->refresh());
+        }
+
+        return $changes;
+    }
+
+    private function logApprovalQuantityChanges(PurchaseOrder $purchaseOrder, array $changes, ?string $reason): void
+    {
+        if ($changes === []) {
+            return;
+        }
+
+        AuditLogger::log(
+            'purchase_order.quantity_adjusted_during_approval',
+            'Kuantitas purchase order disesuaikan saat approval.',
+            $purchaseOrder,
+            ['changes' => $changes, 'reason' => trim((string) $reason)]
+        );
     }
 
     private function purchaseOrderRejectionStage(PurchaseOrder $purchaseOrder, $user): ?string

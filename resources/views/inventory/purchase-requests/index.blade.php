@@ -25,6 +25,7 @@
                     @if ($workflowTab === 'approval')
                     @endif
                     @include('inventory.components.transaction-filter')
+                    <div class="table-scroll-shell">
                     <table>
                         <thead>
                             <tr>
@@ -94,6 +95,7 @@
                         @endforelse
                         </tbody>
                     </table>
+                    </div>
                     @include('inventory.components.transaction-pagination')
                 </section>
 @endsection

@@ -26,6 +26,46 @@
                     </table>
                     </div>
                 </section>
+                <section class="warehouse-stock-section">
+                    <div class="warehouse-stock-heading">
+                        <h2>Stok Gudang Kantor</h2>
+                        <span>{{ $warehouseItems->count() }} barang tersedia</span>
+                    </div>
+                    <div class="warehouse-stock-table-wrap">
+                        <table class="warehouse-stock-table">
+                            <colgroup>
+                                <col class="warehouse-stock-part">
+                                <col class="warehouse-stock-item">
+                                <col class="warehouse-stock-category">
+                                <col class="warehouse-stock-balance-column">
+                            </colgroup>
+                            <thead>
+                                <tr>
+                                    <th>Part Number</th>
+                                    <th>Barang</th>
+                                    <th>Kategori</th>
+                                    <th class="is-numeric">Saldo Tersedia</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            @forelse ($warehouseItems as $warehouseItem)
+                                @php
+                                    $warehouseQuantity = $warehouseItem->warehouseStock();
+                                    $warehouseQuantityDecimals = floor($warehouseQuantity) === $warehouseQuantity ? 0 : 2;
+                                @endphp
+                                <tr class="clickable-row" data-href="{{ route('stock.items.review', $warehouseItem) }}" tabindex="0" role="link" aria-label="Lihat kartu stok gudang {{ $warehouseItem->name }}">
+                                    <td><span class="warehouse-stock-sku">{{ $warehouseItem->sku }}</span></td>
+                                    <td><strong class="warehouse-stock-item-name">{{ $warehouseItem->name }}</strong></td>
+                                    <td>{{ $warehouseItem->itemCategory?->name ?? $warehouseItem->category }}</td>
+                                    <td class="warehouse-stock-quantity">{{ number_format($warehouseQuantity, $warehouseQuantityDecimals, ',', '.') }} <span>{{ $warehouseItem->uom }}</span></td>
+                                </tr>
+                            @empty
+                                <tr><td colspan="4" class="warehouse-stock-empty">Belum ada stok tersedia di gudang kantor.</td></tr>
+                            @endforelse
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
                 <section class="camp-stock-section">
                     <div class="camp-stock-heading">
                         <h2>Stok per Camp</h2>

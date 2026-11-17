@@ -180,13 +180,37 @@
         .signature { min-height: 134px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: #fbfdfe; display: flex; flex-direction: column; justify-content: space-between; }
         .signature strong { display: block; color: var(--ink); font-weight: 900; }
         .signature-line { border-top: 1px solid #708494; padding-top: 7px; font-weight: 900; text-align: center; }
-        .qty-choice { display: grid; gap: 7px; min-width: 160px; }
-        .qty-picker { display: none; grid-template-columns: 86px auto; gap: 7px; align-items: center; margin-top: 7px; }
-        .qty-picker.is-open { display: grid; }
-        .qty-display { display: inline-flex; align-items: center; min-height: 24px; font-weight: 900; }
-        .mini-button { min-height: 32px; padding: 6px 9px; font-size: 12px; }
-        .link-button { min-height: auto; padding: 0; border: 0; background: transparent; color: var(--red); box-shadow: none; font-size: 12px; }
-        .link-button:hover { background: transparent; text-decoration: underline; }
+        .workflow-overview { display: grid; gap: 12px; padding: 18px; }
+        .workflow-steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+        .workflow-step { min-height: 58px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: #f7fafb; color: var(--muted); font-size: 12px; font-weight: 900; }
+        .workflow-step::before { content: ""; display: block; width: 9px; height: 9px; margin-bottom: 7px; border-radius: 50%; background: #aab9c1; }
+        .workflow-step.is-done { border-color: #9bd8c2; background: #f0fbf6; color: var(--green); }
+        .workflow-step.is-done::before { background: var(--green); }
+        .workflow-step.is-active { border-color: #e9c36d; background: #fff8e9; color: #7a5200; }
+        .workflow-step.is-active::before { background: var(--amber); }
+        .summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+        .summary-item { min-width: 0; padding: 12px 14px; background: #fff; border-right: 1px solid var(--line); }
+        .summary-item:last-child { border-right: 0; }
+        .summary-item span { display: block; color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; }
+        .summary-item strong { display: block; margin-top: 4px; overflow-wrap: anywhere; font-size: 16px; font-weight: 900; }
+        .table-scroll { width: 100%; overflow-x: auto; border-radius: 8px; }
+        .table-scroll table { min-width: 980px; }
+        .allocation-control { display: grid; grid-template-columns: minmax(76px, 100px) auto; gap: 7px; align-items: center; min-width: 150px; }
+        .allocation-control input { font-weight: 900; }
+        .allocation-control span { color: var(--muted); font-size: 12px; }
+        .allocation-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 12px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #f8fbfc; }
+        .allocation-summary > div { min-width: 0; padding: 12px 14px; border-right: 1px solid var(--line); }
+        .allocation-summary > div:last-child { border-right: 0; }
+        .allocation-summary span { display: block; color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; }
+        .allocation-summary strong { display: block; margin-top: 4px; overflow-wrap: anywhere; font-size: 16px; font-weight: 900; }
+        .allocation-message { grid-column: 1 / -1; border-top: 1px solid var(--line); border-right: 0 !important; color: #7a5200; font-weight: 800; }
+        .allocation-message.is-complete { color: var(--green); }
+        details.timeline-panel { padding: 0; }
+        .timeline-summary { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 18px; cursor: pointer; list-style: none; }
+        .timeline-summary::-webkit-details-marker { display: none; }
+        .timeline-summary::after { content: "+"; color: var(--teal); font-size: 22px; font-weight: 900; }
+        details[open] .timeline-summary::after { content: "-"; }
+        .timeline-content { padding: 0 18px 18px; }
         .is-hidden { display: none !important; }
         @media (max-width: 1220px) {
             .vendor-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -194,14 +218,25 @@
         }
         @media (max-width: 1050px) {
             .grid, .stat-grid, .signature-grid { grid-template-columns: 1fr; }
-            table { display: block; overflow-x: auto; }
-            th, td { min-width: 130px; }
+            .workflow-steps { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+            .summary-grid, .allocation-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .summary-item:nth-child(2) { border-right: 0; }
+            .summary-item:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+            .allocation-summary > div:nth-child(2) { border-right: 0; }
+            .allocation-summary > div:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
         }
         @media (max-width: 680px) {
             .topbar, .panel-head { flex-direction: column; }
             .vendor-row { grid-template-columns: 1fr; }
             .vendor-notes { grid-column: auto; }
             .vendor-action { grid-column: auto; }
+            .workflow-steps { grid-template-columns: 1fr; }
+            .summary-grid, .allocation-summary { grid-template-columns: 1fr; }
+            .summary-item,
+            .allocation-summary > div { border-right: 0; border-bottom: 1px solid var(--line); }
+            .summary-item:last-child,
+            .allocation-summary > div:last-child { border-bottom: 0; }
+            .timeline-summary { align-items: flex-start; }
         }
 
         /* Review polish */
@@ -333,6 +368,9 @@
             'tab' => $returnContext === 'active' ? null : $returnContext,
             'company_id' => $returnCompanyId,
         ]));
+    $uom = $requestItem->uom ?? $requestItem->inventoryItem->uom;
+    $allocationLimit = $requestItem->allocationLimit();
+    $remainingQuantity = max(0, $requestItem->quantity - $selectedQuantity);
 @endphp
 <main class="page">
     <header class="topbar">
@@ -370,14 +408,23 @@
         <div class="notice error">{{ session('error') ?: $errors->first() }}</div>
     @endif
 
-    <section class="stat-grid">
-        <div class="stat"><span>Vendor pembanding</span><strong>{{ $rankedQuotations->count() }}</strong></div>
-        <div class="stat"><span>Harga termurah cukup stok</span><strong>{{ $recommendedQuotation?->vendor?->name ?? '-' }}</strong></div>
-        <div class="stat"><span>Qty pengadaan</span><strong>{{ $procurementStatus === 'approved' ? $requestItem->approvedQuantity().' '.($requestItem->uom ?? $requestItem->inventoryItem->uom) : ($selectedQuantity > 0 ? $selectedQuantity.' '.($requestItem->uom ?? $requestItem->inventoryItem->uom) : '-') }}</strong></div>
-        <div class="stat"><span>Approval PPG</span><strong>{{ $procurementStatusLabel }}</strong></div>
+    <section class="panel workflow-overview">
+        <div class="workflow-steps" aria-label="Tahapan proses harga vendor">
+            <div @class(['workflow-step', 'is-done' => $orderRequestApprovalCompleted, 'is-active' => ! $orderRequestApprovalCompleted])>OR Disetujui</div>
+            <div @class(['workflow-step', 'is-done' => $rankedQuotations->isNotEmpty(), 'is-active' => $orderRequestApprovalCompleted && $rankedQuotations->isEmpty()])>Penawaran Vendor</div>
+            <div @class(['workflow-step', 'is-done' => $selectedQuantity > 0, 'is-active' => $rankedQuotations->isNotEmpty() && $selectedQuantity === 0])>Alokasi Vendor</div>
+            <div @class(['workflow-step', 'is-done' => $procurementStatus === 'approved', 'is-active' => in_array($procurementStatus, ['draft', 'pending_equipment', 'pending_director'], true) && $selectedQuantity > 0])>Approval PPG</div>
+            <div @class(['workflow-step', 'is-done' => $hasPurchaseOrder, 'is-active' => $procurementStatus === 'approved' && ! $hasPurchaseOrder])>Siap Purchase Order</div>
+        </div>
+        <div class="summary-grid">
+            <div class="summary-item"><span>Vendor Pembanding</span><strong>{{ $rankedQuotations->count() }}</strong></div>
+            <div class="summary-item"><span>Rekomendasi</span><strong>{{ $recommendedQuotation?->vendor?->name ?? '-' }}</strong></div>
+            <div class="summary-item"><span>Qty Dialokasikan</span><strong>{{ $selectedQuantity }} {{ $uom }}</strong></div>
+            <div class="summary-item"><span>Status PPG</span><strong>{{ $procurementStatusLabel }}</strong></div>
+        </div>
     </section>
 
-    <section class="panel" style="margin-top:16px">
+    <section class="panel">
         <div class="panel-head">
             <div>
                 <h2>Approval Permintaan Pengadaan Barang (PPG)</h2>
@@ -387,6 +434,7 @@
         @if ($orderRequestApprovalCompleted && in_array($procurementStatus, ['not_required', 'draft'], true) && ! $requestItem->procurement_created_at)
             <div class="notice success">Approval Order Request sudah selesai. Approval PPG belum diajukan karena pilihan vendor belum ditetapkan.</div>
         @endif
+        <div class="table-scroll">
         <table>
             <thead><tr><th>Tahap</th><th>Nama</th><th>Qty</th><th>Waktu</th><th>Status</th></tr></thead>
             <tbody>
@@ -395,6 +443,7 @@
             <tr><td>Disetujui oleh Direktur</td><td>{{ $directorDisplayName ?: '-' }}</td><td>{{ $directorDisplayAt ? $requestItem->approvedQuantity().' '.($requestItem->uom ?? $requestItem->inventoryItem->uom) : '-' }}</td><td>{{ $directorDisplayAt ? \Illuminate\Support\Carbon::parse($directorDisplayAt)->format('d M Y H:i') : '-' }}</td><td>{{ $directorDisplayStatus }}</td></tr>
             </tbody>
         </table>
+        </div>
         @if ($requestItem->quantity_adjustment_reason)
             <div class="notice">Alasan penyesuaian qty: {{ $requestItem->quantity_adjustment_reason }}</div>
         @endif
@@ -438,6 +487,7 @@
             <div class="panel-head">
                 <div>
                     <h2>Tambah Penawaran Vendor</h2>
+                    <p>Masukkan harga, ketersediaan stok, dan lead time sebagai bahan perbandingan.</p>
                 </div>
             </div>
             @if ($canManageVendorPrices && $canEditQuotations)
@@ -515,6 +565,7 @@
         <div class="panel-head">
             <div>
                 <h2>Ranking Penawaran Vendor</h2>
+                <p>Bandingkan penawaran lalu isi quantity pada vendor yang digunakan.</p>
             </div>
         </div>
         @if ($rankedQuotations->isNotEmpty())
@@ -529,8 +580,9 @@
                 <form method="post" action="{{ route('vendor-allocations.update', $requestItem) }}" data-confirm="{{ $isApprovalAllocationReview ? 'Simpan perubahan pilihan vendor ini?' : 'Simpan vendor dan pembagian qty final untuk barang ini?' }}" data-allocation-form>
                 @csrf
             @endif
+            <div class="table-scroll">
             <table>
-                <thead><tr><th>Rank</th><th>Vendor</th><th>Merek / No Part</th><th>Harga</th><th>Stok Vendor</th><th>Lead Time</th><th>Qty Dipilih</th><th>Total</th><th>Status</th><th>Aksi</th><th>Catatan</th></tr></thead>
+                <thead><tr><th>Rank</th><th>Vendor</th><th>Merek / No Part</th><th>Harga</th><th>Stok Vendor</th><th>Lead Time</th><th>Qty Dipilih (Pilih Vendor / Ubah Qty)</th><th>Total Estimasi</th><th>Status</th><th>Catatan</th></tr></thead>
                 <tbody>
                 @foreach ($rankedQuotations as $quotation)
                     @php
@@ -556,10 +608,12 @@
                         <td>{{ $quotation->lead_time_days }} hari</td>
                         <td>
                             @if ($canChooseVendor)
-                                <input name="allocations[{{ $quotation->id }}]" type="hidden" value="{{ old('allocations.'.$quotation->id, $allocatedQuantity) }}" data-allocation-input data-initial-value="{{ $allocatedQuantity }}" data-price="{{ $quotation->unitPriceIdr() }}" data-uom="{{ $requestItem->uom ?? $requestItem->inventoryItem->uom }}">
-                                <span class="qty-display" data-allocation-display>{{ $allocatedQuantity > 0 ? $allocatedQuantity.' '.($requestItem->uom ?? $requestItem->inventoryItem->uom) : '-' }}</span>
+                                <label class="allocation-control">
+                                    <input name="allocations[{{ $quotation->id }}]" type="number" min="0" max="{{ $quotation->available_quantity }}" step="1" value="{{ old('allocations.'.$quotation->id, $allocatedQuantity) }}" aria-label="Alokasi quantity vendor {{ $quotation->vendor->name }}" data-allocation-input data-initial-value="{{ $allocatedQuantity }}" data-price="{{ $canSeePrices ? $quotation->unitPriceIdr() : 0 }}" @disabled($quotation->available_quantity <= 0)>
+                                    <span>{{ $uom }}</span>
+                                </label>
                             @else
-                                {{ $allocatedQuantity ?: '-' }}
+                                <strong>{{ $allocatedQuantity ?: '-' }}</strong> {{ $allocatedQuantity > 0 ? $uom : '' }}
                             @endif
                         </td>
                         <td class="price">
@@ -582,39 +636,21 @@
                                 <span class="pill">Pembanding</span>
                             @endif
                         </td>
-                        <td>
-                            @if ($quotation->is_selected)
-                                <div class="qty-choice">
-                                    <span class="pill ok">Vendor digunakan</span>
-                                    @if ($canChooseVendor)
-                                        <button type="button" class="ghost mini-button" data-open-qty>Ubah Qty</button>
-                                        <div class="qty-picker" data-qty-picker>
-                                            <input type="number" min="0" max="{{ $quotation->available_quantity }}" value="{{ $allocatedQuantity }}" data-qty-value>
-                                            <button type="button" class="mini-button" data-apply-qty>Terapkan</button>
-                                            <button type="button" class="link-button" data-clear-qty>Kosongkan</button>
-                                        </div>
-                                    @endif
-                                </div>
-                            @elseif ($canChooseVendor && $quotation->available_quantity > 0)
-                                <div class="qty-choice">
-                                    <button type="button" class="mini-button" data-open-qty>Pilih Vendor</button>
-                                    <div class="qty-picker" data-qty-picker>
-                                        <input type="number" min="0" max="{{ $quotation->available_quantity }}" value="0" data-qty-value>
-                                        <button type="button" class="mini-button" data-apply-qty>Terapkan</button>
-                                        <button type="button" class="link-button" data-clear-qty>Kosongkan</button>
-                                    </div>
-                                </div>
-                            @elseif ($quotation->available_quantity <= 0)
-                                <span class="muted">Stok kosong</span>
-                            @else
-                                <span class="muted">Tidak ada akses pilih</span>
-                            @endif
-                        </td>
                         <td>{{ $quotation->notes ?: '-' }}</td>
                     </tr>
                 @endforeach
                 </tbody>
             </table>
+            </div>
+            <div class="allocation-summary" data-allocation-summary data-required-quantity="{{ $requestItem->quantity }}" data-allocation-limit="{{ $allocationLimit }}" data-uom="{{ $uom }}">
+                <div><span>Kebutuhan Camp</span><strong>{{ $requestItem->quantity }} {{ $uom }}</strong></div>
+                <div><span>Dialokasikan</span><strong data-allocation-quantity>{{ $selectedQuantity }} {{ $uom }}</strong></div>
+                <div><span>Sisa Kebutuhan</span><strong data-allocation-remaining>{{ $remainingQuantity }} {{ $uom }}</strong></div>
+                <div><span>Nilai Alokasi</span><strong data-allocation-total>{{ $canSeePrices ? \App\Support\Currency::format($selectedTotal) : 'Disembunyikan' }}</strong></div>
+                <div class="allocation-message {{ $remainingQuantity === 0 ? 'is-complete' : '' }}" data-allocation-message>
+                    {{ $remainingQuantity === 0 ? 'Seluruh kebutuhan sudah dialokasikan.' : 'Masih ada '.$remainingQuantity.' '.$uom.' yang belum dialokasikan.' }}
+                </div>
+            </div>
             @if ($canChooseVendor)
                 <div class="actions" style="margin-top:12px">
                     <button @class(['is-hidden' => $isApprovalAllocationReview]) @if ($isApprovalAllocationReview) data-save-approval-selection @endif>{{ $isApprovalAllocationReview ? 'Simpan Pilihan' : 'Simpan Alokasi Vendor' }}</button>
@@ -640,28 +676,34 @@
         @endif
     </section>
 
-    <section class="panel">
-        <div class="panel-head">
+    <details class="panel timeline-panel">
+        <summary class="timeline-summary">
             <div>
                 <h2>Timeline Harga Vendor</h2>
+                <p>Riwayat perubahan dan aktivitas pada proses ini.</p>
+            </div>
+            <span class="pill">{{ ($timelineLogs ?? collect())->count() }} aktivitas</span>
+        </summary>
+        <div class="timeline-content">
+            <div class="table-scroll">
+                <table>
+                    <thead><tr><th>Waktu</th><th>User</th><th>Aktivitas</th><th>Event</th></tr></thead>
+                    <tbody>
+                    @forelse (($timelineLogs ?? collect()) as $log)
+                        <tr>
+                            <td>{{ $log->created_at?->format('d M Y H:i') }}</td>
+                            <td>{{ $log->user?->name ?? 'System' }}</td>
+                            <td>{{ $log->description }}</td>
+                            <td><span class="pill">{{ $log->event }}</span></td>
+                        </tr>
+                    @empty
+                        <tr><td colspan="4">Belum ada timeline harga vendor.</td></tr>
+                    @endforelse
+                    </tbody>
+                </table>
             </div>
         </div>
-        <table>
-            <thead><tr><th>Waktu</th><th>User</th><th>Aktivitas</th><th>Event</th></tr></thead>
-            <tbody>
-            @forelse (($timelineLogs ?? collect()) as $log)
-                <tr>
-                    <td>{{ $log->created_at?->format('d M Y H:i') }}</td>
-                    <td>{{ $log->user?->name ?? 'System' }}</td>
-                    <td>{{ $log->description }}</td>
-                    <td><span class="pill">{{ $log->event }}</span></td>
-                </tr>
-            @empty
-                <tr><td colspan="4">Belum ada timeline harga vendor.</td></tr>
-            @endforelse
-            </tbody>
-        </table>
-    </section>
+    </details>
 </main>
 @include('inventory.components.confirm-submit')
 <script>
@@ -824,50 +866,47 @@
         list.querySelectorAll('[data-vendor-row]').forEach(bindCurrencyRow);
     });
 
-    document.querySelectorAll('[data-open-qty]').forEach((button) => {
-        button.addEventListener('click', () => {
-            const picker = button.closest('td').querySelector('[data-qty-picker]');
-            picker?.classList.toggle('is-open');
-            picker?.querySelector('[data-qty-value]')?.focus();
-        });
-    });
+    const allocationSummary = document.querySelector('[data-allocation-summary]');
+    const allocationInputs = [...document.querySelectorAll('[data-allocation-input]')];
 
-    document.querySelectorAll('[data-apply-qty]').forEach((button) => {
-        button.addEventListener('click', () => {
-            const row = button.closest('tr');
-            const picker = button.closest('[data-qty-picker]');
-            const valueInput = picker.querySelector('[data-qty-value]');
-            const hiddenInput = row.querySelector('[data-allocation-input]');
-            const display = row.querySelector('[data-allocation-display]');
-            const uom = hiddenInput?.dataset.uom || '';
-            const value = Math.max(0, Number(valueInput.value || 0));
-            const max = Number(valueInput.max || 0);
-            const finalValue = Math.min(value, max);
+    const syncAllocationSummary = () => {
+        if (! allocationSummary || allocationInputs.length === 0) return;
 
-            valueInput.value = finalValue;
-            hiddenInput.value = finalValue;
-            display.textContent = finalValue > 0 ? `${finalValue} ${uom}` : '-';
-            picker.classList.remove('is-open');
+        const required = Number(allocationSummary.dataset.requiredQuantity || 0);
+        const limit = Number(allocationSummary.dataset.allocationLimit || required);
+        const uom = allocationSummary.dataset.uom || '';
+        const allocated = allocationInputs.reduce((sum, input) => sum + Math.max(0, Number(input.value || 0)), 0);
+        const remaining = Math.max(0, required - allocated);
+        const total = allocationInputs.reduce((sum, input) => sum + (Math.max(0, Number(input.value || 0)) * Number(input.dataset.price || 0)), 0);
+        const message = allocationSummary.querySelector('[data-allocation-message]');
+
+        allocationSummary.querySelector('[data-allocation-quantity]').textContent = `${allocated} ${uom}`;
+        allocationSummary.querySelector('[data-allocation-remaining]').textContent = `${remaining} ${uom}`;
+        @if ($canSeePrices)
+            allocationSummary.querySelector('[data-allocation-total]').textContent = `Rp${idrFormatter.format(total)}`;
+        @endif
+
+        allocationInputs.forEach((input) => input.setCustomValidity(''));
+        message.classList.remove('is-complete');
+        if (allocated > limit) {
+            message.textContent = `Total alokasi melebihi batas tahap ini (${limit} ${uom}).`;
+            allocationInputs.find((input) => ! input.disabled)?.setCustomValidity(`Total alokasi maksimal ${limit} ${uom}.`);
+        } else if (remaining > 0) {
+            message.textContent = `Masih ada ${remaining} ${uom} yang belum dialokasikan.`;
+        } else {
+            message.textContent = 'Seluruh kebutuhan sudah dialokasikan.';
+            message.classList.add('is-complete');
+        }
+    };
+
+    allocationInputs.forEach((input) => {
+        input.addEventListener('input', () => {
+            syncAllocationSummary();
             syncApprovalActions();
         });
     });
 
-    document.querySelectorAll('[data-clear-qty]').forEach((button) => {
-        button.addEventListener('click', () => {
-            const row = button.closest('tr');
-            const picker = button.closest('[data-qty-picker]');
-            const valueInput = picker.querySelector('[data-qty-value]');
-            const hiddenInput = row.querySelector('[data-allocation-input]');
-            const display = row.querySelector('[data-allocation-display]');
-
-            valueInput.value = 0;
-            hiddenInput.value = 0;
-            display.textContent = '-';
-            picker.classList.remove('is-open');
-            syncApprovalActions();
-        });
-    });
-
+    syncAllocationSummary();
     syncApprovalActions();
 </script>
 </body>

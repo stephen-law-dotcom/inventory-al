@@ -115,7 +115,8 @@
                                             <span class="pill ok">Referensi toleransi {{ $opnameItem->tolerance_quantity }} {{ $opnameItem->inventoryItem->uom }}</span>
                                         </div>
                                     </div>
-                                    <table style="margin-top:12px">
+                                    <div class="table-scroll-shell" style="margin-top:12px">
+                                    <table>
                                         <thead><tr><th>Stok Sistem</th><th>Stok Fisik</th><th>Toleransi</th><th>Catatan Opname</th><th>Keputusan</th></tr></thead>
                                         <tbody>
                                         <tr>
@@ -140,6 +141,7 @@
                                         </tr>
                                         </tbody>
                                     </table>
+                                    </div>
                                 </article>
                             @endforeach
                         </div>
@@ -170,6 +172,7 @@
 
                 <section>
                     <h2>Worklist Order Request</h2>
+                    <div class="table-scroll-shell">
                     <table>
                         <thead>
                             <tr>
@@ -229,6 +232,7 @@
                         @endforelse
                         </tbody>
                     </table>
+                    </div>
                 </section>
 
                 <div class="grid-2">

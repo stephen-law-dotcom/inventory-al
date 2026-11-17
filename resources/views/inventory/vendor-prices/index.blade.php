@@ -64,6 +64,7 @@
                                         </div>
                                     </div>
 
+                                    <div class="table-scroll-shell">
                                     <table class="vendor-price-table">
                                         <thead><tr><th>Unit</th><th>Barang</th><th>Qty</th><th>Pembanding</th><th>{{ $workflowTab === 'approval' ? 'Approval Pengadaan' : 'Rekomendasi' }}</th><th>Aksi</th></tr></thead>
                                         <tbody>
@@ -147,6 +148,7 @@
                                         @endforeach
                                         </tbody>
                                     </table>
+                                    </div>
                                 </article>
                         @empty
                             <div class="empty">{{ $workflowTab === 'history' ? 'Belum ada history harga vendor.' : ($workflowTab === 'approval' ? 'Belum ada approval pengadaan.' : 'Belum ada detail barang yang siap input harga vendor.') }}</div>

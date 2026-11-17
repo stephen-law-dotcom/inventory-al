@@ -6,6 +6,7 @@
                         @include('inventory.partials.master-transfer-toolbar', ['type' => 'companies', 'canImport' => $canManageMasterData, 'createUrl' => route('master.create', 'companies'), 'createLabel' => 'Tambah Perusahaan'])
                         <section>
                             <h2>List Perusahaan</h2>
+                            <div class="table-scroll-shell">
                             <table>
                                 <thead><tr><th>Kode</th><th>Nama Perusahaan</th><th>Kode Dokumen</th><th>Telepon</th><th>Alamat</th><th>Site</th>@if ($canManageMasterData)<th>Aksi</th>@endif</tr></thead>
                                 <tbody>
@@ -34,6 +35,7 @@
                                 @endforelse
                                 </tbody>
                             </table>
+                            </div>
                         </section>
                     </div>
                 @endif
@@ -43,6 +45,7 @@
                         @include('inventory.partials.master-transfer-toolbar', ['type' => 'camps', 'canImport' => $canManageMasterData, 'createUrl' => route('master.create', 'camps'), 'createLabel' => 'Tambah Camp'])
                         <section>
                             <h2>List Camp</h2>
+                            <div class="table-scroll-shell">
                             <table>
                                 <thead><tr><th>Kode</th><th>Nama Site</th><th>Perusahaan</th><th>Lokasi</th>@if ($canManageMasterData)<th>Aksi</th>@endif</tr></thead>
                                 <tbody>
@@ -69,6 +72,7 @@
                                 @endforelse
                                 </tbody>
                             </table>
+                            </div>
                         </section>
                     </div>
                 @endif
@@ -78,6 +82,7 @@
                         @include('inventory.partials.master-transfer-toolbar', ['type' => 'vendors', 'canImport' => $canManageMasterData, 'createUrl' => route('master.create', 'vendors'), 'createLabel' => 'Tambah Vendor'])
                         <section>
                             <h2>List Vendor</h2>
+                            <div class="table-scroll-shell">
                             <table>
                                 <thead><tr><th>Kode</th><th>Nama</th><th>Kontak</th><th>Telepon</th><th>Alamat</th>@if ($canManageMasterData)<th>Aksi</th>@endif</tr></thead>
                                 <tbody>
@@ -105,6 +110,7 @@
                                 @endforelse
                                 </tbody>
                             </table>
+                            </div>
                         </section>
                     </div>
                 @endif
@@ -114,6 +120,7 @@
                         @include('inventory.partials.master-transfer-toolbar', ['type' => 'units', 'canImport' => $canManageMasterData, 'createUrl' => route('master.create', 'units'), 'createLabel' => 'Tambah Unit'])
                         <section>
                             <h2>List Unit</h2>
+                            <div class="table-scroll-shell">
                             <table>
                                 <thead><tr><th>Kode</th><th>Nama</th><th>Tipe</th><th>Serial</th><th>Camp</th>@if ($canManageMasterData)<th>Aksi</th>@endif</tr></thead>
                                 <tbody>
@@ -141,6 +148,7 @@
                                 @endforelse
                                 </tbody>
                             </table>
+                            </div>
                         </section>
                     </div>
                 @endif
@@ -150,6 +158,7 @@
                         @include('inventory.partials.master-transfer-toolbar', ['type' => 'item-categories', 'canImport' => $canManageMasterData, 'createUrl' => route('master.create', 'item-categories'), 'createLabel' => 'Tambah Kategori'])
                         <section>
                             <h2>List Kategori Barang</h2>
+                            <div class="table-scroll-shell">
                             <table>
                                 <thead><tr><th>Kode</th><th>Nama</th><th>EOQ / ROP</th><th>Toleransi Susut</th><th>Deskripsi</th>@if ($canManageMasterData)<th>Aksi</th>@endif</tr></thead>
                                 <tbody>
@@ -177,6 +186,7 @@
                                 @endforelse
                                 </tbody>
                             </table>
+                            </div>
                         </section>
                     </div>
                 @endif
@@ -186,6 +196,7 @@
                         @include('inventory.partials.master-transfer-toolbar', ['type' => 'items', 'canImport' => $canManageMasterData, 'createUrl' => route('master.create', 'items'), 'createLabel' => 'Tambah Barang'])
                         <section>
                             <h2>List Barang</h2>
+                            <div class="table-scroll-shell">
                             <table>
                                 <thead><tr><th>Part Number</th><th>Nama</th><th>Deskripsi</th><th>Kategori</th><th>Satuan</th><th>Stok</th><th>Min-Max</th>@if ($canManageMasterData)<th>Aksi</th>@endif</tr></thead>
                                 <tbody>
@@ -215,6 +226,7 @@
                                 @endforelse
                                 </tbody>
                             </table>
+                            </div>
                         </section>
                     </div>
                 @endif
@@ -224,6 +236,7 @@
                         @include('inventory.partials.master-transfer-toolbar', ['type' => 'uoms', 'canImport' => $canManageMasterData, 'createUrl' => route('master.create', 'uoms'), 'createLabel' => 'Tambah Satuan'])
                         <section>
                             <h2>List Satuan</h2>
+                            <div class="table-scroll-shell">
                             <table>
                                 <thead><tr><th>Kode</th><th>Nama</th><th>Deskripsi</th>@if ($canManageMasterData)<th>Aksi</th>@endif</tr></thead>
                                 <tbody>
@@ -249,6 +262,7 @@
                                 @endforelse
                                 </tbody>
                             </table>
+                            </div>
                         </section>
                     </div>
                 @endif
@@ -258,6 +272,7 @@
                         @include('inventory.partials.master-transfer-toolbar', ['type' => 'users', 'canImport' => true, 'createUrl' => route('master.create', 'users'), 'createLabel' => 'Tambah User'])
                         <section>
                             <h2>List User</h2>
+                            <div class="table-scroll-shell">
                             <table>
                                 <thead><tr><th>Nama</th><th>Email</th><th>Role</th><th>Scope Data</th><th>Akses Harga</th><th>Aksi</th></tr></thead>
                                 <tbody>
@@ -293,6 +308,7 @@
                                 @endforelse
                                 </tbody>
                             </table>
+                            </div>
                         </section>
                     </div>
                 @endif
@@ -302,6 +318,7 @@
                         @include('inventory.partials.master-transfer-toolbar', ['type' => 'roles', 'canImport' => true, 'createUrl' => route('master.create', 'roles'), 'createLabel' => 'Tambah Role'])
                         <section>
                             <h2>List Role</h2>
+                            <div class="table-scroll-shell">
                             <table>
                                 <thead><tr><th>Role</th><th>Slug</th><th>Deskripsi</th><th>Akses Harga</th><th>Admin</th><th>Aksi</th></tr></thead>
                                 <tbody>
@@ -327,6 +344,7 @@
                                 @endforelse
                                 </tbody>
                             </table>
+                            </div>
                         </section>
                     </div>
                 @endif

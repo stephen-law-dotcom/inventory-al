@@ -171,6 +171,9 @@ class StockController extends Controller
             ->where('quantity', '>', 0)
             ->orderBy('camp_id')
             ->get();
+        $warehouseItems = $items
+            ->filter(fn (InventoryItem $item) => $item->warehouseStock() > 0)
+            ->values();
 
         return [
             'activeMenu' => 'stock',
@@ -179,6 +182,7 @@ class StockController extends Controller
             'activeCompanyId' => $activeCompanyId,
             'companyTabCounts' => [],
             'items' => $items,
+            'warehouseItems' => $warehouseItems,
             'campStocks' => $campStocks,
             'notifications' => $user->systemNotifications()->latest()->limit(8)->get(),
             'unreadNotificationsCount' => $user->systemNotifications()->whereNull('read_at')->count(),

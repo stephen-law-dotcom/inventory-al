@@ -346,6 +346,7 @@
                         @if ($canViewRequests)
                         <section>
                             <h2>Order Request Terbaru</h2>
+                            <div class="table-scroll-shell table-scroll-compact">
                             <table class="mini-table">
                                 <thead><tr><th>No</th><th>Site</th><th>Status</th>@if ($canSeePrices)<th>Total</th>@endif</tr></thead>
                                 <tbody>
@@ -363,11 +364,13 @@
                                 @endforelse
                                 </tbody>
                             </table>
+                            </div>
                         </section>
                         @endif
                         @if ($canViewPurchaseOrders)
                         <section>
                             <h2>PO Aktif</h2>
+                            <div class="table-scroll-shell table-scroll-compact">
                             <table class="mini-table">
                                 <thead><tr><th>No PO</th><th>Vendor</th><th>Status</th>@if ($canSeePrices)<th>Nilai</th>@endif</tr></thead>
                                 <tbody>
@@ -392,6 +395,7 @@
                                 @endforelse
                                 </tbody>
                             </table>
+                            </div>
                         </section>
                         @endif
                     </div>
@@ -477,6 +481,7 @@
                                 <h2 style="margin:0">Pemakaian Tertinggi</h2>
                                 <span class="pill">{{ $dashboardPeriodLabel }}</span>
                             </div>
+                            <div class="table-scroll-shell table-scroll-compact">
                             <table class="mini-table">
                                 <thead><tr><th>Barang</th><th>Total</th><th>Satuan</th></tr></thead>
                                 <tbody>
@@ -491,6 +496,7 @@
                                 @endforelse
                                 </tbody>
                             </table>
+                            </div>
                         </section>
                     @endif
                 </div>

@@ -45,6 +45,7 @@
                 <section>
                     <h2>{{ $workflowTab === 'history' ? 'History Purchase Order' : ($workflowTab === 'approval' ? 'Approval Purchase Order' : 'Purchase Order') }}</h2>
                     @include('inventory.components.transaction-filter')
+                    <div class="table-scroll-shell">
                     <table class="purchase-order-table">
                         <thead>
                         <tr>
@@ -140,6 +141,7 @@
                         @endforelse
                         </tbody>
                     </table>
+                    </div>
                     @include('inventory.components.transaction-pagination')
                 </section>
 @endsection

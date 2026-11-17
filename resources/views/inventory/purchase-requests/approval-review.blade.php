@@ -106,6 +106,8 @@
             background: #fff;
             font-size: 13px;
         }
+        .table-wrap { width: 100%; max-width: 100%; overflow-x: auto; border-radius: 8px; -webkit-overflow-scrolling: touch; }
+        .table-wrap table { display: table; min-width: 980px; max-width: none; margin: 0; overflow: visible; }
         th, td { border-bottom: 1px solid var(--line); padding: 10px; text-align: left; vertical-align: top; }
         tr:last-child td { border-bottom: 0; }
         th { background: #eef7f8; color: #4d6273; font-size: 12px; font-weight: 900; text-transform: uppercase; }
@@ -248,6 +250,7 @@
             @csrf
         </form>
 
+        <div class="table-wrap">
         <table>
             <thead>
                 <tr>
@@ -329,6 +332,7 @@
             @endforelse
             </tbody>
         </table>
+        </div>
     </section>
 
     @php

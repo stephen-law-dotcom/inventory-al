@@ -91,6 +91,7 @@
                     <section>
                         <h2>{{ $workflowTab === 'history' ? 'History Pemakaian Bulanan' : 'Pemakaian Bulan Ini' }}</h2>
                         @include('inventory.components.transaction-filter')
+                        <div class="table-scroll-shell">
                         <table>
                             <thead><tr><th>Tanggal</th><th>Unit / Operasi</th><th>Barang</th><th>Qty</th><th>Operator</th><th>Lokasi / Referensi</th><th>Status</th></tr></thead>
                             <tbody>
@@ -127,6 +128,7 @@
                             @endforelse
                             </tbody>
                         </table>
+                        </div>
                         @include('inventory.components.transaction-pagination')
                     </section>
                     @endunless

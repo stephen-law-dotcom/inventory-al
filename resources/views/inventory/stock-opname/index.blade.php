@@ -49,7 +49,8 @@
                                         @endif
                                     </div>
                                 </div>
-                                <table style="margin-top:12px">
+                                <div class="table-scroll-shell" style="margin-top:12px">
+                                <table>
                                     <thead><tr><th>Barang</th><th>Stok Sistem</th><th>Stok Fisik</th><th>Selisih</th><th>Status</th><th>Catatan</th></tr></thead>
                                     <tbody>
                                     @foreach ($opname->items as $opnameItem)
@@ -83,6 +84,7 @@
                                     @endforeach
                                     </tbody>
                                 </table>
+                                </div>
                             </article>
                         @empty
                             <div class="empty">Belum ada stock opname.</div>

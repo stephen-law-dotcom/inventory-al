@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Camp;
 use App\Models\Company;
+use App\Models\InventoryItem;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -51,6 +52,38 @@ class InventoryPageControllerTest extends TestCase
             ->assertOk()
             ->assertSee(asset('css/inventory.css'), false)
             ->assertSee(asset('js/inventory.js'), false);
+    }
+
+    public function test_stock_page_lists_only_available_warehouse_items(): void
+    {
+        [$user] = $this->fixtures();
+        InventoryItem::create([
+            'sku' => 'WH-AVAILABLE-001',
+            'name' => 'Barang Gudang Tersedia',
+            'category' => 'Suku Cadang',
+            'uom' => 'pcs',
+            'stock_on_hand' => 12,
+            'stock_reserved' => 0,
+            'minimum_stock' => 0,
+            'maximum_stock' => 0,
+        ]);
+        InventoryItem::create([
+            'sku' => 'WH-EMPTY-001',
+            'name' => 'Barang Gudang Kosong',
+            'category' => 'Suku Cadang',
+            'uom' => 'pcs',
+            'stock_on_hand' => 0,
+            'stock_reserved' => 0,
+            'minimum_stock' => 0,
+            'maximum_stock' => 0,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('stock'))
+            ->assertOk()
+            ->assertSee('Stok Gudang Kantor')
+            ->assertSee('Barang Gudang Tersedia')
+            ->assertViewHas('warehouseItems', fn ($items) => $items->pluck('sku')->all() === ['WH-AVAILABLE-001']);
     }
 
     public function test_report_pdf_export_uses_domain_view(): void

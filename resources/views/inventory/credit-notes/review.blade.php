@@ -61,6 +61,8 @@
         .meta { border:1px solid var(--line); border-radius:8px; padding:12px; background:#f8fbfc; }
         .meta span { display:block; color:var(--muted); font-size:12px; font-weight:800; text-transform:uppercase; }
         .meta strong { display:block; margin-top:5px; }
+        .table-wrap { width:100%; max-width:100%; overflow-x:auto; border-radius:8px; -webkit-overflow-scrolling:touch; }
+        .table-wrap table { display:table; min-width:850px; max-width:none; margin:0; overflow:visible; }
         table { width:100%; border-collapse:collapse; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
         th, td { padding:11px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
         th { background:#edf6f8; color:#40576b; font-size:12px; text-transform:uppercase; }
@@ -125,6 +127,7 @@
 
             <section class="panel">
                 <h2>Barang Bermasalah</h2>
+                <div class="table-wrap">
                 <table>
                     <thead><tr><th>Barang</th><th>Masalah</th><th>Qty</th>@if ($canSeePrices)<th class="number">Harga Credit</th><th class="number">Total</th>@endif<th>Pengajuan Ulang</th><th>Catatan</th></tr></thead>
                     <tbody>
@@ -150,6 +153,7 @@
                     @endforeach
                     </tbody>
                 </table>
+                </div>
             </section>
 
             <section class="panel">

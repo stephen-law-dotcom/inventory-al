@@ -47,4 +47,23 @@ class CreditNote extends Model
     {
         return $this->hasMany(CreditNoteItem::class);
     }
+
+    public function supportsVendorRetry(): bool
+    {
+        return in_array($this->source_type, ['goods_receipt', 'site_request'], true)
+            && $this->purchase_order_id !== null;
+    }
+
+    public function canCreateVendorRetry(): bool
+    {
+        if (! $this->supportsVendorRetry() || ! in_array($this->status, ['credited', 'closed'], true)) {
+            return false;
+        }
+
+        if ($this->relationLoaded('items')) {
+            return $this->items->contains(fn (CreditNoteItem $item) => ! $item->retry_request_item_id);
+        }
+
+        return $this->items()->whereNull('retry_request_item_id')->exists();
+    }
 }

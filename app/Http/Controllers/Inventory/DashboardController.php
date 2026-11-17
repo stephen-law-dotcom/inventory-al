@@ -68,7 +68,6 @@ class DashboardController extends Controller
             'purchaseOrderItems.goodsReceiptItems.goodsReceipt',
             'purchaseOrderItems.dispatchItems.receiptItems.siteReceipt',
         ])
-            ->withSum(['usageLogs as usage_logs_sum_quantity' => fn ($query) => $query->whereDate('used_at', '>=', now()->subDays(364)->toDateString())], 'quantity')
             ->withSum('campStocks', 'quantity')
             ->orderBy('name')
             ->get();

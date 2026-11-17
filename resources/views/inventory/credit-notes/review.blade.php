@@ -186,7 +186,7 @@
                 </section>
                 @php
                     $retryCreated = $creditNote->items->whereNotNull('retry_request_item_id')->count();
-                    $canCreateRetry = $creditNote->source_type !== 'manual_return' && in_array($creditNote->status, ['credited', 'closed'], true) && $retryCreated < $creditNote->items->count();
+                    $canCreateRetry = $creditNote->canCreateVendorRetry();
                 @endphp
                 <section class="panel">
                     <h2>Pengajuan Vendor Ulang</h2>

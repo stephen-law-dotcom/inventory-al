@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\CampStock;
 use App\Models\InventoryItem;
 use App\Models\Unit;
-use App\Models\UnitOfMeasure;
 use App\Models\UsageLog;
 use App\Services\AuditLogger;
 use App\Services\CampStockService;
@@ -44,7 +43,6 @@ class UsageController extends Controller
             'inventory_item_id' => ['required', 'exists:inventory_items,id'],
             'usage_type' => ['required', 'in:sparepart,solar,oli,bbm'],
             'quantity' => ['required', 'numeric', 'min:0.01'],
-            'uom' => ['required', 'exists:unit_of_measures,code'],
             'location' => ['nullable', 'string', 'max:255'],
             'shift' => ['nullable', 'string', 'max:50'],
             'meter_reading' => ['nullable', 'numeric', 'min:0'],
@@ -55,6 +53,9 @@ class UsageController extends Controller
 
         $unit = Unit::with('camp')->findOrFail($data['unit_id']);
         abort_unless($unit->camp && auth()->user()?->loadMissing('role')->canAccessCamp($unit->camp_id, $unit->camp->company_id), 403);
+
+        $inventoryItem = InventoryItem::findOrFail($data['inventory_item_id']);
+        $data['uom'] = $inventoryItem->uom;
 
         if ($data['usage_type'] === 'sparepart' && floor((float) $data['quantity']) !== (float) $data['quantity']) {
             throw ValidationException::withMessages([
@@ -133,7 +134,6 @@ class UsageController extends Controller
                 ->orderBy('name')
                 ->get(),
             'items' => InventoryItem::with('itemCategory')->orderBy('name')->get(),
-            'uoms' => UnitOfMeasure::orderBy('code')->get(),
             'campStocks' => CampStock::with(['camp', 'inventoryItem'])
                 ->when($restrict && $visibleCampIds, fn ($query) => $query->whereIn('camp_id', $visibleCampIds))
                 ->when($restrict && ! $visibleCampIds, fn ($query) => $query->whereRaw('1 = 0'))

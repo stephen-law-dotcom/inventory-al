@@ -52,20 +52,18 @@
                                     <select name="inventory_item_id" required data-usage-dependent disabled>
                                         <option value="">Pilih barang setelah unit dipilih</option>
                                         @foreach ($campStocks as $campStock)
-                                            <option value="{{ $campStock->inventory_item_id }}" data-camp-id="{{ $campStock->camp_id }}" @selected(old('inventory_item_id') == $campStock->inventory_item_id)>{{ $campStock->inventoryItem->sku }} - {{ $campStock->inventoryItem->name }}@if ($currentUser->hasPermission('stock.view')) | stok camp {{ number_format($campStock->quantity, 2, ',', '.') }} {{ $campStock->inventoryItem->uom }}@endif</option>
+                                            <option value="{{ $campStock->inventory_item_id }}" data-camp-id="{{ $campStock->camp_id }}" data-uom="{{ $campStock->inventoryItem->uom }}" @selected(old('inventory_item_id') == $campStock->inventory_item_id)>{{ $campStock->inventoryItem->sku }} - {{ $campStock->inventoryItem->name }}@if ($currentUser->hasPermission('stock.view')) | stok camp {{ number_format($campStock->quantity, 2, ',', '.') }} {{ $campStock->inventoryItem->uom }}@endif</option>
                                         @endforeach
                                     </select>
                                 </label>
-                                <label>Qty dipakai <input name="quantity" type="number" step="0.01" min="0.01" value="{{ old('quantity') }}" required data-usage-dependent disabled></label>
+                                <label>Qty dipakai
+                                    <div class="quantity-with-uom">
+                                        <input name="quantity" type="number" step="0.01" min="0.01" value="{{ old('quantity') }}" required data-usage-dependent disabled>
+                                        <span data-usage-uom>-</span>
+                                    </div>
+                                </label>
                             </div>
-                            <div class="three">
-                                <label>Satuan
-                                    <select name="uom" required data-usage-dependent disabled>
-                                        @foreach ($uoms as $uom)
-                                            <option value="{{ $uom->code }}" @selected(old('uom') === $uom->code)>{{ $uom->code }} - {{ $uom->name }}</option>
-                                        @endforeach
-                                    </select>
-                                </label>
+                            <div class="row">
                                 <label>HM / KM unit <input name="meter_reading" type="number" min="0" step="0.01" value="{{ old('meter_reading') }}" placeholder="Contoh: 1250" data-usage-dependent disabled></label>
                                 <label>Shift
                                     <select name="shift" data-usage-dependent disabled>

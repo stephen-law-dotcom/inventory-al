@@ -9,6 +9,7 @@ use App\Models\InventoryItem;
 use App\Models\ItemCategory;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseRequest;
+use App\Models\PurchaseRequestItem;
 use App\Models\Role;
 use App\Models\User;
 use App\Models\Vendor;
@@ -98,6 +99,70 @@ class GoodsReceiptCreditNoteControllerTest extends TestCase
             ->assertSessionHas('success');
 
         $this->assertSame('sent_to_vendor', $creditNote->fresh()->status);
+
+        $this->actingAs($user)
+            ->put(route('credit-notes.update', $creditNote->fresh()), [
+                'status' => 'credited',
+                'notes' => 'Credited by vendor',
+            ])
+            ->assertSessionHas('success');
+
+        $this->actingAs($user)
+            ->post(route('credit-notes.retry.store', $creditNote->fresh()))
+            ->assertRedirect(route('vendor-prices', ['company_id' => $company->id]))
+            ->assertSessionHas('success');
+
+        $creditNoteItem = $creditNote->items()->firstOrFail();
+        $retryItem = PurchaseRequestItem::where('source_credit_note_item_id', $creditNoteItem->id)->firstOrFail();
+
+        $this->assertSame('ready_for_quotation', $retryItem->status);
+        $this->assertSame('draft', $retryItem->procurement_approval_status);
+        $this->assertSame(2, (int) $retryItem->quantity);
+        $this->assertSame($retryItem->id, (int) $creditNoteItem->fresh()->retry_request_item_id);
+        $this->assertSame(0, (int) $item->fresh()->stock_on_hand);
+
+        $this->actingAs($user)
+            ->post(route('credit-notes.retry.store', $creditNote->fresh()))
+            ->assertSessionHasErrors('credit_note');
+
+        $this->assertSame(1, PurchaseRequestItem::where('source_credit_note_item_id', $creditNoteItem->id)->count());
+    }
+
+    public function test_site_credit_note_without_purchase_order_cannot_create_vendor_retry(): void
+    {
+        [$user, , $camp, $vendor, $item] = $this->fixtures();
+        $creditNote = CreditNote::create([
+            'number' => '001/AML-CN/'.now()->format('m-y'),
+            'source_type' => 'site_request',
+            'camp_id' => $camp->id,
+            'vendor_id' => $vendor->id,
+            'credit_note_date' => now()->toDateString(),
+            'requested_by_name' => $user->name,
+            'created_by_name' => $user->name,
+            'status' => 'credited',
+            'currency_code' => 'IDR',
+            'exchange_rate' => 1,
+        ]);
+        $creditNote->items()->create([
+            'inventory_item_id' => $item->id,
+            'quantity_problem' => 1,
+            'issue_type' => 'damaged',
+            'resolution' => 'credit_refund',
+            'unit_price' => 100000,
+            'currency_code' => 'IDR',
+            'exchange_rate' => 1,
+            'total' => 100000,
+        ]);
+
+        $this->assertFalse($creditNote->fresh('items')->canCreateVendorRetry());
+
+        $this->actingAs($user)
+            ->post(route('credit-notes.retry.store', $creditNote))
+            ->assertSessionHas('error', 'Pengajuan vendor ulang hanya tersedia untuk Credit Note yang terhubung dengan Purchase Order asal.');
+
+        $this->assertDatabaseMissing('purchase_request_items', [
+            'source_credit_note_item_id' => $creditNote->items()->firstOrFail()->id,
+        ]);
     }
 
     public function test_manual_credit_note_form_and_stock_deduction_still_work(): void

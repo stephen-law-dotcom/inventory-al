@@ -1175,6 +1175,12 @@ td .muted,
 .dispatch-create-panel form { display: grid; gap: 14px; }
 .dispatch-create-panel form > .three { padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg-soft); }
 .dispatch-item-row { margin: 0; box-shadow: none; }
+.dispatch-item-main { display: grid; grid-template-columns: minmax(0, 2fr) minmax(140px, .6fr) auto; gap: 10px; align-items: end; }
+.dispatch-item-remark { margin-top: 10px; }
+.dispatch-remove-button { width: auto; min-width: 84px; justify-self: end; align-self: end; }
+.quantity-with-uom { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; }
+.quantity-with-uom input { border-radius: 6px 0 0 6px; }
+.quantity-with-uom span { display: grid; min-width: 58px; place-items: center; padding: 0 12px; border: 1px solid var(--line-strong); border-left: 0; border-radius: 0 6px 6px 0; background: var(--bg-soft); color: var(--muted); font-weight: 800; }
 .credit-note-create-panel { display: grid; gap: 16px; }
 .credit-note-type-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .credit-note-type { display: grid; justify-items: start; gap: 4px; min-height: 78px; padding: 14px 16px; border: 1px solid var(--line-strong); border-radius: 8px; background: #fff; color: var(--ink); text-align: left; white-space: normal; }
@@ -1252,6 +1258,8 @@ input[readonly] {
     }
 }
 @media (max-width: 720px) {
+    .dispatch-item-main { grid-template-columns: 1fr; }
+    .dispatch-remove-button { width: auto; }
     .master-toolbar {
         align-items: stretch;
         flex-direction: column;

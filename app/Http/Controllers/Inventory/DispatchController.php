@@ -13,7 +13,6 @@ use App\Models\SiteDispatch;
 use App\Models\SiteDispatchItem;
 use App\Models\SiteReceipt;
 use App\Models\SiteReceiptItem;
-use App\Models\Unit;
 use App\Models\User;
 use App\Services\AuditLogger;
 use App\Services\CampStockService;
@@ -104,7 +103,7 @@ class DispatchController extends Controller
                 'dispatched_by' => auth()->id(),
             ]);
 
-            $this->replaceDispatchDraftItems($dispatch, $data['items'], $camp);
+            $this->replaceDispatchDraftItems($dispatch, $data['items']);
 
             return $dispatch;
         });
@@ -136,7 +135,7 @@ class DispatchController extends Controller
                 'driver_name' => $data['driver_name'] ?? null,
                 'vehicle_number' => $data['vehicle_number'] ?? null,
             ]);
-            $this->replaceDispatchDraftItems($dispatch, $data['items'], $camp);
+            $this->replaceDispatchDraftItems($dispatch, $data['items']);
         });
 
         AuditLogger::log('site_dispatch.draft_updated', 'Draft packing list diperbarui.', $siteDispatch);
@@ -485,11 +484,6 @@ class DispatchController extends Controller
             'transactionFilters' => $filters,
             'transactionPaginator' => $paginator,
             'camps' => $camps,
-            'units' => Unit::with('camp')
-                ->when($restrict && $visibleCampIds, fn ($query) => $query->whereIn('camp_id', $visibleCampIds))
-                ->when($restrict && ! $visibleCampIds, fn ($query) => $query->whereRaw('1 = 0'))
-                ->orderBy('name')
-                ->get(),
             'dispatchableReceiptItems' => $dispatchableReceiptItems,
             'dispatches' => $paginator->getCollection(),
             'notifications' => $user->systemNotifications()->latest()->limit(8)->get(),
@@ -578,13 +572,12 @@ class DispatchController extends Controller
             'vehicle_number' => ['nullable', 'string', 'max:100'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.goods_receipt_item_id' => ['required', 'distinct', 'exists:goods_receipt_items,id'],
-            'items.*.unit_id' => ['nullable', 'exists:units,id'],
             'items.*.quantity_sent' => ['required', 'integer', 'min:1'],
             'items.*.notes' => ['nullable', 'string'],
         ]);
     }
 
-    private function replaceDispatchDraftItems(SiteDispatch $dispatch, array $items, Camp $camp): void
+    private function replaceDispatchDraftItems(SiteDispatch $dispatch, array $items): void
     {
         $dispatch->items()->delete();
 
@@ -603,16 +596,12 @@ class DispatchController extends Controller
                 ]);
             }
 
-            if (! empty($item['unit_id']) && ! Unit::whereKey($item['unit_id'])->where('camp_id', $camp->id)->exists()) {
-                throw ValidationException::withMessages(['items' => 'Unit tujuan harus berasal dari camp yang dipilih.']);
-            }
-
             $dispatch->items()->create([
                 'inventory_item_id' => $receiptItem->purchaseOrderItem->inventory_item_id,
                 'goods_receipt_item_id' => $receiptItem->id,
                 'purchase_order_item_id' => $receiptItem->purchase_order_item_id,
                 'purchase_request_item_id' => $receiptItem->purchase_request_item_id,
-                'unit_id' => $item['unit_id'] ?? null,
+                'unit_id' => null,
                 'quantity_sent' => $item['quantity_sent'],
                 'notes' => $item['notes'] ?? null,
             ]);

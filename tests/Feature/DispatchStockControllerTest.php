@@ -82,7 +82,8 @@ class DispatchStockControllerTest extends TestCase
         $this->actingAs($user)
             ->get(route('dispatches.create', ['company_id' => $company->id]))
             ->assertOk()
-            ->assertSee($receiptItem->purchaseOrderItem->inventoryItem->name);
+            ->assertSee($receiptItem->purchaseOrderItem->inventoryItem->name)
+            ->assertDontSee('Unit tujuan');
 
         $this->actingAs($user)
             ->post(route('dispatches.store'), [
@@ -91,7 +92,7 @@ class DispatchStockControllerTest extends TestCase
                 'vehicle_number' => 'KT 1001 TEST',
                 'items' => [[
                     'goods_receipt_item_id' => $receiptItem->id,
-                    'unit_id' => null,
+                    'unit_id' => 999999,
                     'quantity_sent' => 2,
                     'notes' => 'Operational stock',
                 ]],
@@ -101,6 +102,7 @@ class DispatchStockControllerTest extends TestCase
         $dispatch = SiteDispatch::with('items')->firstOrFail();
         $dispatchItem = $dispatch->items->first();
         $this->assertSame('draft', $dispatch->status);
+        $this->assertNull($dispatchItem->unit_id);
         $this->assertSame(2, (int) $item->fresh()->stock_on_hand);
 
         $this->actingAs($user)

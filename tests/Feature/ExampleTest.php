@@ -2205,14 +2205,14 @@ class ExampleTest extends TestCase
         $this->assertEqualsWithDelta(6928.20, $solar->eoq(), 0.01);
         $this->assertEqualsWithDelta(1880.82, $solar->reorderPoint(), 0.01);
         $this->assertSame(1881, $solar->minimumStockLevel());
-        $this->assertSame(8810, $solar->maximumStockLevel());
+        $this->assertSame(0, $solar->maximumStockLevel());
         $this->assertEquals(1000, $solar->warehouseStock());
         $this->assertEquals(150, $solar->inTransitStock());
         $this->assertEquals(
             $solar->warehouseStock() + $solar->campStock() + $solar->inTransitStock() + $solar->outstandingPurchaseOrderQuantity(),
             $solar->inventoryPosition()
         );
-        $this->assertSame(7660, $solar->recommendedOrderQuantity());
+        $this->assertSame(6929, $solar->recommendedOrderQuantity());
 
         $this->assertFalse($sparepart->usesInventoryPlanning());
         $this->assertSame(0.0, $sparepart->eoq());

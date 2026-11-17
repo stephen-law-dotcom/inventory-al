@@ -25,7 +25,10 @@ class UsageControllerTest extends TestCase
         $this->actingAs($user)
             ->get(route('usage.create', ['company_id' => $company->id]))
             ->assertOk()
-            ->assertSee('Catat Pemakaian Unit');
+            ->assertSee('Catat Pemakaian Unit')
+            ->assertDontSee('name="uom"', false);
+
+        UnitOfMeasure::create(['code' => 'box', 'name' => 'Box']);
 
         $this->actingAs($user)
             ->post(route('usage-logs.store'), [
@@ -34,7 +37,7 @@ class UsageControllerTest extends TestCase
                 'inventory_item_id' => $item->id,
                 'usage_type' => 'sparepart',
                 'quantity' => 2,
-                'uom' => $item->uom,
+                'uom' => 'box',
                 'reference_number' => 'USG-TEST-001',
             ])
             ->assertSessionHas('success');
@@ -48,6 +51,7 @@ class UsageControllerTest extends TestCase
             'unit_id' => $unit->id,
             'inventory_item_id' => $item->id,
             'quantity' => 2,
+            'uom' => $item->uom,
             'reference_number' => 'USG-TEST-001',
         ]);
 
@@ -58,7 +62,6 @@ class UsageControllerTest extends TestCase
                 'inventory_item_id' => $item->id,
                 'usage_type' => 'sparepart',
                 'quantity' => 4,
-                'uom' => $item->uom,
             ])
             ->assertSessionHasErrors('stock');
 

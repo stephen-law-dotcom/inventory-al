@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 
 class InventoryItem extends Model
@@ -11,6 +12,10 @@ class InventoryItem extends Model
     private ?float $cachedOutstandingPurchaseOrderQuantity = null;
 
     private ?float $cachedMaximumDailyDemand = null;
+
+    private ?float $cachedHistoricalAnnualDemand = null;
+
+    private ?array $cachedUsageHistoryWindow = null;
 
     private ?array $cachedHistoricalLeadTimeDays = null;
 
@@ -66,12 +71,18 @@ class InventoryItem extends Model
 
     public function historicalAnnualDemand(): float
     {
-        if (array_key_exists('usage_logs_sum_quantity', $this->attributes)) {
-            return (float) ($this->attributes['usage_logs_sum_quantity'] ?? 0);
+        if ($this->cachedHistoricalAnnualDemand !== null) {
+            return $this->cachedHistoricalAnnualDemand;
         }
 
-        return (float) $this->usageLogs()
-            ->whereDate('used_at', '>=', now()->subDays(364)->toDateString())
+        $window = $this->usageHistoryWindow();
+        if ($window === null) {
+            return $this->cachedHistoricalAnnualDemand = 0;
+        }
+
+        return $this->cachedHistoricalAnnualDemand = (float) $this->usageLogs()
+            ->whereDate('used_at', '>=', $window['start'])
+            ->whereDate('used_at', '<=', $window['end'])
             ->sum('quantity');
     }
 
@@ -102,14 +113,39 @@ class InventoryItem extends Model
             return $this->cachedMaximumDailyDemand;
         }
 
+        $window = $this->usageHistoryWindow();
+        if ($window === null) {
+            return $this->cachedMaximumDailyDemand = 0;
+        }
+
         $maximum = $this->usageLogs()
-            ->whereDate('used_at', '>=', now()->subDays(364)->toDateString())
+            ->whereDate('used_at', '>=', $window['start'])
+            ->whereDate('used_at', '<=', $window['end'])
             ->selectRaw('DATE(used_at) as usage_date, SUM(quantity) as daily_quantity')
             ->groupByRaw('DATE(used_at)')
             ->orderByDesc('daily_quantity')
             ->value('daily_quantity');
 
         return $this->cachedMaximumDailyDemand = (float) ($maximum ?? 0);
+    }
+
+    private function usageHistoryWindow(): ?array
+    {
+        if ($this->cachedUsageHistoryWindow !== null) {
+            return $this->cachedUsageHistoryWindow;
+        }
+
+        $latestUsageDate = $this->usageLogs()->max('used_at');
+        if (! $latestUsageDate) {
+            return null;
+        }
+
+        $end = CarbonImmutable::parse($latestUsageDate)->toDateString();
+
+        return $this->cachedUsageHistoryWindow = [
+            'start' => CarbonImmutable::parse($end)->subDays(364)->toDateString(),
+            'end' => $end,
+        ];
     }
 
     public function averageLeadTimeDays(): float
@@ -195,15 +231,11 @@ class InventoryItem extends Model
 
     public function maximumStockLevel(): int
     {
-        $minimum = $this->minimumStockLevel();
-
-        if (! $this->usesInventoryPlanning()) {
-            return max($minimum, (int) $this->maximum_stock);
+        if ($this->usesInventoryPlanning()) {
+            return 0;
         }
 
-        $eoq = (int) ceil($this->eoq());
-
-        return $eoq > 0 ? $minimum + $eoq : $minimum;
+        return max($this->minimumStockLevel(), (int) $this->maximum_stock);
     }
 
     public function shouldReorder(): bool
@@ -215,6 +247,10 @@ class InventoryItem extends Model
     {
         if (! $this->shouldReorder()) {
             return 0;
+        }
+
+        if ($this->usesInventoryPlanning()) {
+            return max(0, (int) ceil($this->eoq()));
         }
 
         return max(0, (int) ceil($this->maximumStockLevel() - $this->inventoryPosition()));
@@ -333,7 +369,7 @@ class InventoryItem extends Model
             return true;
         }
 
-        $text = strtolower(trim($this->category . ' ' . $this->name . ' ' . $this->uom));
+        $text = strtolower(trim($this->category.' '.$this->name.' '.$this->uom));
 
         foreach (['solar', 'bensin', 'oli', 'oil', 'fuel', 'bbm', 'cairan', 'liter'] as $keyword) {
             if (str_contains($text, $keyword)) {

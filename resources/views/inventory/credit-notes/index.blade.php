@@ -105,7 +105,7 @@
                             @php
                                 $totalProblem = $creditNote->items->sum('quantity_problem');
                                 $retryCreated = $creditNote->items->whereNotNull('retry_request_item_id')->count();
-                                $canCreateRetry = $creditNote->source_type !== 'manual_return' && $currentUser->hasPermission('credit_notes.manage') && in_array($creditNote->status, ['credited', 'closed'], true) && $retryCreated < $creditNote->items->count();
+                                $canCreateRetry = $currentUser->hasPermission('credit_notes.manage') && $creditNote->canCreateVendorRetry();
                             @endphp
                             <article class="credit-note-card" data-href="{{ route('credit-notes.review', array_merge(['creditNote' => $creditNote], $creditNoteReviewQuery)) }}" tabindex="0" role="link">
                                 <div class="credit-note-card-header">

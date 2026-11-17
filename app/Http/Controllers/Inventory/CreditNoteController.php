@@ -251,26 +251,47 @@ class CreditNoteController extends Controller
         $this->ensureCanAccessCreditNote($creditNote);
 
         $creditNote->loadMissing([
-            'purchaseOrder.purchaseRequest',
+            'purchaseOrder.purchaseRequest.camp',
             'items.purchaseOrderItem.requestItem',
             'items.inventoryItem',
             'items.retryRequestItem',
         ]);
 
-        if ($creditNote->source_type === 'manual_return') {
-            return back()->with('error', 'Credit note manual return tidak perlu dibuatkan pengajuan vendor ulang.');
+        if (! $creditNote->supportsVendorRetry() || ! $creditNote->purchaseOrder?->purchaseRequest) {
+            return back()->with('error', 'Pengajuan vendor ulang hanya tersedia untuk Credit Note yang terhubung dengan Purchase Order asal.');
         }
 
         if (! in_array($creditNote->status, ['credited', 'closed'], true)) {
             return back()->with('error', 'Pengajuan ulang baru bisa dibuat setelah credit note berstatus credited atau closed.');
         }
 
-        $createdItems = DB::transaction(function () use ($creditNote) {
-            $createdItems = collect();
-            $purchaseRequest = $creditNote->purchaseOrder->purchaseRequest;
+        $result = DB::transaction(function () use ($creditNote) {
+            $lockedCreditNote = CreditNote::with('purchaseOrder.purchaseRequest.camp')
+                ->lockForUpdate()
+                ->findOrFail($creditNote->id);
 
-            foreach ($creditNote->items as $creditNoteItem) {
-                if ($creditNoteItem->retry_request_item_id) {
+            if (! $lockedCreditNote->supportsVendorRetry() || ! $lockedCreditNote->purchaseOrder?->purchaseRequest) {
+                throw ValidationException::withMessages([
+                    'credit_note' => 'Credit Note tidak memiliki Purchase Order asal yang valid untuk pengajuan ulang.',
+                ]);
+            }
+
+            if (! in_array($lockedCreditNote->status, ['credited', 'closed'], true)) {
+                throw ValidationException::withMessages([
+                    'credit_note' => 'Pengajuan ulang baru bisa dibuat setelah Credit Note berstatus credited atau closed.',
+                ]);
+            }
+
+            $createdItems = collect();
+            $purchaseRequest = $lockedCreditNote->purchaseOrder->purchaseRequest;
+            $creditNoteItems = $lockedCreditNote->items()
+                ->with(['purchaseOrderItem.requestItem', 'inventoryItem'])
+                ->lockForUpdate()
+                ->get();
+
+            foreach ($creditNoteItems as $creditNoteItem) {
+                if ($creditNoteItem->retry_request_item_id
+                    || PurchaseRequestItem::where('source_credit_note_item_id', $creditNoteItem->id)->exists()) {
                     continue;
                 }
 
@@ -283,7 +304,7 @@ class CreditNoteController extends Controller
                     'quantity' => $creditNoteItem->quantity_problem,
                     'uom' => $creditNoteItem->purchaseOrderItem?->uom ?? $creditNoteItem->inventoryItem?->uom,
                     'estimated_unit_price' => 0,
-                    'specification' => trim('Pengajuan ulang dari '.$creditNote->number.' / PO '.$creditNote->purchaseOrder->number.'. '.($sourceItem?->specification ?? '')),
+                    'specification' => trim('Pengajuan ulang dari '.$lockedCreditNote->number.' / PO '.$lockedCreditNote->purchaseOrder->number.'. '.($sourceItem?->specification ?? '')),
                     'status' => 'ready_for_quotation',
                     'logistic_approval_status' => 'approved',
                     'logistic_checked_at' => now(),
@@ -318,15 +339,20 @@ class CreditNoteController extends Controller
 
             $this->syncPurchaseRequestStatus($purchaseRequest->fresh('items'));
 
-            return $createdItems;
+            return [
+                'created_items' => $createdItems,
+                'company_id' => $lockedCreditNote->purchaseOrder->purchaseRequest->camp?->company_id,
+            ];
         });
+
+        $createdItems = $result['created_items'];
 
         AuditLogger::log('credit_note.retry_created', 'Pengajuan vendor ulang dibuat dari credit note.', $creditNote, [
             'purchase_request_item_ids' => $createdItems->pluck('id')->values()->all(),
         ]);
 
         return redirect()->route('vendor-prices', [
-            'company_id' => $creditNote->purchaseOrder->purchaseRequest->camp()->value('company_id'),
+            'company_id' => $result['company_id'],
         ])->with('success', $createdItems->count().' item pengajuan ulang dibuat dan siap input harga vendor.');
     }
 

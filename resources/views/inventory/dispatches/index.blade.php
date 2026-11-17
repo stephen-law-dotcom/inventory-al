@@ -29,7 +29,6 @@
                         $editingDispatch = $editingDispatch ?? null;
                         $initialDispatchItems = old('items', $editingDispatch?->items->map(fn ($item) => [
                             'goods_receipt_item_id' => $item->goods_receipt_item_id,
-                            'unit_id' => $item->unit_id,
                             'quantity_sent' => $item->quantity_sent,
                             'notes' => $item->notes,
                         ])->values()->all() ?? []);
@@ -53,7 +52,7 @@
                     </section>
                     <template id="dispatch-row-template">
                         <div class="inline-edit dispatch-item-row">
-                            <div class="three">
+                            <div class="dispatch-item-main">
                                 <label>Sumber penerimaan
                                     <select name="items[__INDEX__][goods_receipt_item_id]" required>
                                         <option value="">Pilih barang diterima</option>
@@ -69,18 +68,10 @@
                                         @endforeach
                                     </select>
                                 </label>
-                                <label>Unit tujuan
-                                    <select name="items[__INDEX__][unit_id]" data-unit-select>
-                                        <option value="">Stok umum camp</option>
-                                        @foreach ($units as $unit)<option value="{{ $unit->id }}" data-camp-id="{{ $unit->camp_id }}">{{ $unit->code }} - {{ $unit->name }}</option>@endforeach
-                                    </select>
-                                </label>
                                 <label>Qty kirim <input name="items[__INDEX__][quantity_sent]" type="number" min="1" value="1" required></label>
+                                <button type="button" class="ghost dispatch-remove-button" data-remove-dispatch-row title="Hapus barang" aria-label="Hapus barang dari Packing List">Hapus</button>
                             </div>
-                            <div class="row">
-                                <label>Remark <input name="items[__INDEX__][notes]" placeholder="Keterangan atau tujuan penggunaan"></label>
-                                <button type="button" class="ghost" data-remove-dispatch-row>Hapus Baris</button>
-                            </div>
+                            <label class="dispatch-item-remark">Remark <input name="items[__INDEX__][notes]" placeholder="Keterangan atau tujuan penggunaan"></label>
                         </div>
                     </template>
                 @endif
@@ -118,30 +109,28 @@
                             if (!form) return;
                             const rows = form.querySelector('[data-dispatch-rows]');
                             const template = document.querySelector('#dispatch-row-template');
-                            const camp = form.querySelector('[data-dispatch-camp]');
                             let index = 0;
-                            const syncUnits = () => rows.querySelectorAll('[data-unit-select]').forEach(select => {
-                                Array.from(select.options).forEach(option => option.hidden = option.dataset.campId && option.dataset.campId !== camp.value);
-                                if (select.selectedOptions[0]?.hidden) select.value = '';
-                            });
                             const initialItems = @json($initialDispatchItems);
+                            const syncRemoveButtons = () => {
+                                const canRemove = rows.children.length > 1;
+                                rows.querySelectorAll('[data-remove-dispatch-row]').forEach(button => button.hidden = !canRemove);
+                            };
                             const addRow = (item = {}) => {
                                 const rowIndex = index++;
                                 rows.insertAdjacentHTML('beforeend', template.innerHTML.replaceAll('__INDEX__', rowIndex));
                                 const row = rows.lastElementChild;
                                 row.querySelector(`[name="items[${rowIndex}][goods_receipt_item_id]"]`).value = item.goods_receipt_item_id ?? '';
-                                row.querySelector(`[name="items[${rowIndex}][unit_id]"]`).value = item.unit_id ?? '';
                                 row.querySelector(`[name="items[${rowIndex}][quantity_sent]"]`).value = item.quantity_sent ?? 1;
                                 row.querySelector(`[name="items[${rowIndex}][notes]"]`).value = item.notes ?? '';
-                                syncUnits();
+                                syncRemoveButtons();
                             };
                             form.querySelector('[data-add-dispatch-row]').addEventListener('click', addRow);
                             rows.addEventListener('click', event => {
                                 if (!event.target.matches('[data-remove-dispatch-row]')) return;
                                 event.target.closest('.dispatch-item-row').remove();
                                 if (!rows.children.length) addRow();
+                                syncRemoveButtons();
                             });
-                            camp.addEventListener('change', syncUnits);
                             initialItems.length ? initialItems.forEach(addRow) : addRow();
                         })();
                     </script>

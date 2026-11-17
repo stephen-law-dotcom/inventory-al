@@ -547,7 +547,6 @@ class ReportService
                 'purchaseOrderItems.goodsReceiptItems.goodsReceipt',
                 'purchaseOrderItems.dispatchItems.receiptItems.siteReceipt',
             ])
-            ->withSum(['usageLogs as usage_logs_sum_quantity' => fn ($q) => $q->whereDate('used_at', '>=', now()->subDays(364)->toDateString())], 'quantity')
             ->withSum('campStocks', 'quantity')
             ->get()
             ->filter->usesInventoryPlanning()
@@ -560,7 +559,6 @@ class ReportService
             'maximum_lead_time' => $this->number($item->maximumLeadTimeDays()).' hari',
             'safety' => $this->qty($item->safetyStockLevel(), $item->uom),
             'eoq' => $this->qty($item->eoq(), $item->uom), 'rop' => $this->qty($item->minimumStockLevel(), $item->uom),
-            'maximum' => $this->qty($item->maximumStockLevel(), $item->uom),
             'warehouse' => $this->qty($item->warehouseStock(), $item->uom), 'camp' => $this->qty($item->campStock(), $item->uom),
             'transit' => $this->qty($item->inTransitStock(), $item->uom), 'on_order' => $this->qty($item->outstandingPurchaseOrderQuantity(), $item->uom),
             'stock' => $this->qty($item->inventoryPosition(), $item->uom),
@@ -575,7 +573,7 @@ class ReportService
             ['key' => 'average_lead_time', 'label' => 'Lead Time Rata-rata', 'align' => 'right'],
             ['key' => 'maximum_lead_time', 'label' => 'Lead Time Maksimum', 'align' => 'right'],
             ['key' => 'safety', 'label' => 'Safety Stock', 'align' => 'right'], ['key' => 'eoq', 'label' => 'EOQ', 'align' => 'right'],
-            ['key' => 'rop', 'label' => 'ROP / Min', 'align' => 'right'], ['key' => 'maximum', 'label' => 'Max', 'align' => 'right'],
+            ['key' => 'rop', 'label' => 'ROP / Min', 'align' => 'right'],
             ['key' => 'warehouse', 'label' => 'Gudang', 'align' => 'right'], ['key' => 'camp', 'label' => 'Camp', 'align' => 'right'],
             ['key' => 'transit', 'label' => 'Perjalanan', 'align' => 'right'], ['key' => 'on_order', 'label' => 'PO Aktif', 'align' => 'right'],
             ['key' => 'stock', 'label' => 'Posisi Stok', 'align' => 'right'], ['key' => 'recommendation', 'label' => 'Rekomendasi', 'align' => 'right'],

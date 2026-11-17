@@ -64,6 +64,8 @@ class DashboardInventoryReminderTest extends TestCase
 
         $response = $this->actingAs($user)->get(route('dashboard'));
 
+        $this->assertSame(271, $item->recommendedOrderQuantity());
+
         $response
             ->assertOk()
             ->assertSeeText('Pengingat Pembelian')
@@ -71,7 +73,6 @@ class DashboardInventoryReminderTest extends TestCase
             ->assertSeeText('20 pcs')
             ->assertSeeText('105 pcs')
             ->assertSeeText('271 pcs')
-            ->assertSeeText('356 pcs')
             ->assertSeeText('Perlu Order')
             ->assertSeeText($incompleteItem->name)
             ->assertSeeText('Parameter EOQ/ROP belum lengkap')

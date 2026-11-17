@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Sistem Inventory AL</title>
     <link rel="icon" type="image/svg+xml" href="{{ asset('favicon.svg') }}?v=2">
-    <link rel="stylesheet" href="{{ asset('css/inventory.css') }}">
+    <link rel="stylesheet" href="{{ asset('css/inventory.css') }}?v={{ filemtime(public_path('css/inventory.css')) }}">
 </head>
 <body>
 
@@ -39,7 +39,7 @@
         </main>
     </div>
 </div>
-<script src="{{ asset('js/inventory.js') }}" defer></script>
+<script src="{{ asset('js/inventory.js') }}?v={{ filemtime(public_path('js/inventory.js')) }}" defer></script>
 </body>
 </html>
 

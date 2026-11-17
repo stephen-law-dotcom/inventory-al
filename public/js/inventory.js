@@ -201,6 +201,7 @@ document.querySelector('[data-export-report]')?.addEventListener('click', () => 
 document.querySelectorAll('[data-usage-form]').forEach((form) => {
     const unitSelect = form.querySelector('[data-usage-unit]');
     const itemSelect = form.querySelector('[name="inventory_item_id"]');
+    const uomLabel = form.querySelector('[data-usage-uom]');
     const dependents = form.querySelectorAll('[data-usage-dependent]');
     const message = form.querySelector('[data-usage-unit-message]');
 
@@ -216,12 +217,14 @@ document.querySelectorAll('[data-usage-form]').forEach((form) => {
             });
             if (itemSelect.selectedOptions[0]?.hidden) itemSelect.value = '';
         }
+        if (uomLabel) uomLabel.textContent = itemSelect?.selectedOptions[0]?.dataset.uom || '-';
         if (message) {
             message.hidden = hasUnit;
         }
     };
 
     unitSelect.addEventListener('change', syncUsageUnit);
+    itemSelect?.addEventListener('change', syncUsageUnit);
     syncUsageUnit();
 });
 

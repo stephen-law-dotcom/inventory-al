@@ -112,6 +112,12 @@ class GoodsReceiptCreditNoteControllerTest extends TestCase
             ->assertRedirect(route('vendor-prices', ['company_id' => $company->id]))
             ->assertSessionHas('success');
 
+        $this->actingAs($user)
+            ->get(route('vendor-prices', ['company_id' => $company->id]))
+            ->assertOk()
+            ->assertDontSee('Semua Perusahaan')
+            ->assertDontSee('company-tabs-wrap', false);
+
         $creditNoteItem = $creditNote->items()->firstOrFail();
         $retryItem = PurchaseRequestItem::where('source_credit_note_item_id', $creditNoteItem->id)->firstOrFail();
 

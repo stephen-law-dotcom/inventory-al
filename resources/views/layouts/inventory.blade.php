@@ -18,7 +18,7 @@
         <main>
             @include('layouts.partials.flash-message')
 
-            @if (in_array($activeMenu, $companyScopedMenus, true) && (($companies ?? collect())->count() > 1 || $activeCompanyId))
+            @if (in_array($activeMenu, $companyScopedMenus, true) && ($companies ?? collect())->count() > 1)
                 <section class="company-tabs-wrap" aria-label="Filter perusahaan">
                     <div class="company-tabs">
                         <a class="company-tab {{ ! $activeCompanyId ? 'active' : '' }}" href="{{ $companyTabUrl(null) }}">

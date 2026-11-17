@@ -177,6 +177,20 @@
             .page { width: min(100% - 24px, 1240px); padding-top: 14px; }
             .panel { padding: 16px; }
         }
+        details.timeline-panel { padding: 0; overflow: hidden; }
+        .timeline-summary { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 18px; cursor: pointer; list-style: none; }
+        .timeline-summary::-webkit-details-marker { display: none; }
+        .timeline-summary::after { content: "+"; flex: 0 0 auto; color: var(--teal); font-size: 22px; font-weight: 900; line-height: 1; }
+        details[open] .timeline-summary::after { content: "-"; }
+        .timeline-summary:focus-visible { outline: 3px solid rgba(8, 127, 120, .25); outline-offset: -3px; }
+        .timeline-summary h2 { margin: 0; }
+        .timeline-summary p { margin-top: 3px; }
+        .timeline-content { padding: 0 18px 18px; }
+        @media (max-width: 680px) {
+            details.timeline-panel { padding: 0; }
+            .timeline-summary { align-items: flex-start; padding: 16px; }
+            .timeline-content { padding: 0 16px 16px; }
+        }
     </style>
 </head>
 <body>
@@ -337,28 +351,44 @@
                 </div>
             </section>
 
-            <section class="panel">
-                <div class="panel-head">
+            @php
+                $documentTimeline = $timelineLogs ?? collect();
+                $openDocumentTimeline = $documentTimeline->contains(function ($log) {
+                    $event = strtolower((string) $log->event);
+                    $description = strtolower((string) $log->description);
+
+                    return str_contains($event, 'rejected')
+                        || str_contains($event, 'returned')
+                        || str_contains($description, 'ditolak')
+                        || str_contains($description, 'revisi');
+                });
+            @endphp
+            <details class="panel timeline-panel" @if ($openDocumentTimeline) open @endif>
+                <summary class="timeline-summary">
                     <div>
                         <h2>Timeline Dokumen</h2>
+                        <p>Riwayat perubahan dan aktivitas Order Request.</p>
+                    </div>
+                    <span class="pill info">{{ $documentTimeline->count() }} aktivitas</span>
+                </summary>
+                <div class="timeline-content">
+                    <div class="timeline">
+                        @forelse ($documentTimeline as $log)
+                            <div class="step">
+                                <div class="step-head">
+                                    <h3>{{ $log->description }}</h3>
+                                    <span class="pill info">{{ $log->event }}</span>
+                                </div>
+                                <p>{{ $log->user?->name ?? 'System' }} - {{ $formatDate($log->created_at) }}</p>
+                            </div>
+                        @empty
+                            <div class="step">
+                                <p>Belum ada timeline aktivitas untuk dokumen ini.</p>
+                            </div>
+                        @endforelse
                     </div>
                 </div>
-                <div class="timeline">
-                    @forelse (($timelineLogs ?? collect()) as $log)
-                        <div class="step">
-                            <div class="step-head">
-                                <h3>{{ $log->description }}</h3>
-                                <span class="pill info">{{ $log->event }}</span>
-                            </div>
-                            <p>{{ $log->user?->name ?? 'System' }} - {{ $formatDate($log->created_at) }}</p>
-                        </div>
-                    @empty
-                        <div class="step">
-                            <p>Belum ada timeline aktivitas untuk dokumen ini.</p>
-                        </div>
-                    @endforelse
-                </div>
-            </section>
+            </details>
         </div>
 
         <aside class="side-column">

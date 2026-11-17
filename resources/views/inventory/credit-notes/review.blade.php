@@ -74,8 +74,17 @@
         .timeline { display:grid; gap:10px; }
         .step { border-left:4px solid var(--accent); background:#f8fbfc; border-radius:8px; padding:11px; }
         .step h3 { font-size:14px; margin-bottom:4px; }
+        details.timeline-panel { padding:0; overflow:hidden; }
+        .timeline-summary { display:flex; justify-content:space-between; gap:12px; align-items:center; padding:18px; cursor:pointer; list-style:none; }
+        .timeline-summary::-webkit-details-marker { display:none; }
+        .timeline-summary::after { content:"+"; flex:0 0 auto; color:var(--accent); font-size:22px; font-weight:900; line-height:1; }
+        details[open] .timeline-summary::after { content:"-"; }
+        .timeline-summary:focus-visible { outline:3px solid rgba(11,143,138,.25); outline-offset:-3px; }
+        .timeline-summary h2 { margin:0; }
+        .timeline-summary p { margin-top:3px; }
+        .timeline-content { padding:0 18px 18px; }
         @media (max-width:900px) { .topbar, .layout { grid-template-columns:1fr; display:grid; } .stats { grid-template-columns:1fr 1fr; } .meta-grid, .two { grid-template-columns:1fr; } }
-        @media (max-width:560px) { .page { width:min(100% - 20px, 1180px); margin:10px auto; } .stats { grid-template-columns:1fr; } h1 { font-size:24px; } }
+        @media (max-width:560px) { .page { width:min(100% - 20px, 1180px); margin:10px auto; } .stats { grid-template-columns:1fr; } h1 { font-size:24px; } .timeline-summary { align-items:flex-start; padding:16px; } .timeline-content { padding:0 16px 16px; } }
     </style>
 </head>
 <body>
@@ -156,19 +165,39 @@
                 </div>
             </section>
 
-            <section class="panel">
-                <h2>Timeline Credit Note</h2>
-                <div class="timeline">
-                    @forelse ($timelineLogs as $log)
-                        <div class="step">
-                            <h3>{{ $log->description }}</h3>
-                            <p>{{ $log->user?->name ?? 'System' }} - {{ $log->created_at?->format('d M Y H:i') }} - {{ $log->event }}</p>
-                        </div>
-                    @empty
-                        <div class="step"><p>Belum ada timeline untuk credit note ini.</p></div>
-                    @endforelse
+            @php
+                $creditNoteTimeline = $timelineLogs ?? collect();
+                $openCreditNoteTimeline = $creditNoteTimeline->contains(function ($log) {
+                    $event = strtolower((string) $log->event);
+                    $description = strtolower((string) $log->description);
+
+                    return str_contains($event, 'rejected')
+                        || str_contains($event, 'returned')
+                        || str_contains($description, 'ditolak')
+                        || str_contains($description, 'revisi');
+                });
+            @endphp
+            <details class="panel timeline-panel" @if ($openCreditNoteTimeline) open @endif>
+                <summary class="timeline-summary">
+                    <div>
+                        <h2>Timeline Credit Note</h2>
+                        <p>Riwayat perubahan dan aktivitas Credit Note.</p>
+                    </div>
+                    <span class="pill info">{{ $creditNoteTimeline->count() }} aktivitas</span>
+                </summary>
+                <div class="timeline-content">
+                    <div class="timeline">
+                        @forelse ($creditNoteTimeline as $log)
+                            <div class="step">
+                                <h3>{{ $log->description }}</h3>
+                                <p>{{ $log->user?->name ?? 'System' }} - {{ $log->created_at?->format('d M Y H:i') }} - {{ $log->event }}</p>
+                            </div>
+                        @empty
+                            <div class="step"><p>Belum ada timeline untuk credit note ini.</p></div>
+                        @endforelse
+                    </div>
                 </div>
-            </section>
+            </details>
         </div>
 
         <aside class="stack">

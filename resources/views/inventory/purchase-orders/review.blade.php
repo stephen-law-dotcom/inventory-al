@@ -242,6 +242,21 @@
             .page { width: min(100% - 24px, 1180px); padding-top: 14px; }
             .panel { padding: 16px; }
         }
+        details.timeline-panel { padding: 0; overflow: hidden; }
+        .timeline-summary { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 20px; cursor: pointer; list-style: none; }
+        .timeline-summary::-webkit-details-marker { display: none; }
+        .timeline-summary::after { content: "+"; flex: 0 0 auto; color: var(--teal); font-size: 22px; font-weight: 900; line-height: 1; }
+        details[open] .timeline-summary::after { content: "-"; }
+        .timeline-summary:focus-visible { outline: 3px solid rgba(8, 127, 120, .25); outline-offset: -3px; }
+        .timeline-summary h2 { margin: 0; }
+        .timeline-summary p { margin: 3px 0 0; color: var(--muted); }
+        .timeline-content { padding: 0 20px 20px; }
+        .timeline-content ul { margin-top: 0; }
+        @media (max-width: 640px) {
+            details.timeline-panel { padding: 0; }
+            .timeline-summary { align-items: flex-start; padding: 16px; }
+            .timeline-content { padding: 0 16px 16px; }
+        }
     </style>
 </head>
 <body>
@@ -531,16 +546,36 @@
                 </ul>
             </section>
 
-            <section class="panel review-box">
-                <h2>Timeline PO</h2>
-                <ul>
-                    @forelse (($timelineLogs ?? collect()) as $log)
-                        <li>{{ $log->created_at?->format('d M Y H:i') }} - {{ $log->description }} oleh {{ $log->user?->name ?? 'System' }}</li>
-                    @empty
-                        <li>Belum ada timeline purchase order.</li>
-                    @endforelse
-                </ul>
-            </section>
+            @php
+                $purchaseOrderTimeline = $timelineLogs ?? collect();
+                $openPurchaseOrderTimeline = $purchaseOrderTimeline->contains(function ($log) {
+                    $event = strtolower((string) $log->event);
+                    $description = strtolower((string) $log->description);
+
+                    return str_contains($event, 'rejected')
+                        || str_contains($event, 'returned')
+                        || str_contains($description, 'ditolak')
+                        || str_contains($description, 'revisi');
+                });
+            @endphp
+            <details class="panel review-box timeline-panel" @if ($openPurchaseOrderTimeline) open @endif>
+                <summary class="timeline-summary">
+                    <div>
+                        <h2>Timeline PO</h2>
+                        <p>Riwayat perubahan dan aktivitas Purchase Order.</p>
+                    </div>
+                    <span class="status info">{{ $purchaseOrderTimeline->count() }} aktivitas</span>
+                </summary>
+                <div class="timeline-content">
+                    <ul>
+                        @forelse ($purchaseOrderTimeline as $log)
+                            <li>{{ $log->created_at?->format('d M Y H:i') }} - {{ $log->description }} oleh {{ $log->user?->name ?? 'System' }}</li>
+                        @empty
+                            <li>Belum ada timeline purchase order.</li>
+                        @endforelse
+                    </ul>
+                </div>
+            </details>
 
             <section class="panel issue-panel">
                 <h2>Flow Pembelian PO</h2>

@@ -48,10 +48,11 @@
         }
         .eyebrow { margin: 0 0 4px; color: var(--teal); font-size: 12px; font-weight: 900; text-transform: uppercase; }
         h1, h2, h3, p { margin: 0; }
-        h1 { font-size: 28px; line-height: 1.2; font-weight: 900; }
+        h1 { font-size: 28px; line-height: 1.2; font-weight: 900; overflow-wrap: anywhere; }
         h2 { font-size: 17px; font-weight: 900; }
         p { margin-top: 5px; color: var(--muted); }
         .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+        .actions form { margin: 0; }
         .button, button {
             display: inline-flex;
             align-items: center;
@@ -114,6 +115,7 @@
         tbody tr:hover { background: #f7fbfc; }
         input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--teal); }
         input[type="text"] {
+            width: 100%;
             min-height: 36px;
             border: 1px solid var(--line);
             border-radius: 6px;
@@ -128,10 +130,20 @@
         .signature { min-height: 142px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: #fbfcfd; display: flex; flex-direction: column; justify-content: space-between; }
         .signature strong { display: block; color: var(--ink); font-weight: 900; }
         .signature-line { border-top: 1px solid #708494; padding-top: 7px; font-weight: 900; text-align: center; }
+        .checkbox-cell { width: 46px; min-width: 46px; text-align: center; }
+        .item-title { display: block; font-weight: 900; }
+        .stage-statuses { display: grid; gap: 6px; justify-items: start; }
+        .overview-statuses { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; align-items: center; }
+        .rejection-note { margin-top: 8px; padding: 8px 9px; border-left: 3px solid var(--red); border-radius: 5px; background: #fff4f2; color: var(--red); font-size: 12px; font-weight: 800; }
+        .row-actions { display: grid; gap: 8px; min-width: 260px; }
+        .row-actions form { margin: 0; }
+        .approve-form button { width: 100%; }
+        .reject-form { display: grid; grid-template-columns: minmax(150px, 1fr) auto; gap: 7px; align-items: center; }
+        .action-empty { display: inline-block; padding: 8px 0; color: var(--muted); }
         @media (max-width: 900px) {
             .topbar, .panel-head { flex-direction: column; }
-            .stat-grid, .signature-grid { grid-template-columns: 1fr; }
-            table { display: block; overflow-x: auto; }
+            .overview-statuses { justify-content: flex-start; }
+            .stat-grid, .signature-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
             th, td { min-width: 135px; }
         }
 
@@ -179,6 +191,13 @@
             .page { width: min(100% - 24px, 1240px); padding-top: 14px; }
             .panel { padding: 16px; }
         }
+        @media (max-width: 560px) {
+            .page { width: min(100% - 20px, 1240px); padding-top: 10px; }
+            .actions, .actions .button, .actions > button { width: 100%; }
+            .stat-grid, .signature-grid { grid-template-columns: 1fr; }
+            .reject-form { grid-template-columns: 1fr; }
+            .reject-form button { width: 100%; }
+        }
     </style>
 </head>
 <body>
@@ -201,6 +220,23 @@
         'dashboard' => route('dashboard', array_filter(['company_id' => $returnCompanyId])),
         default => route('approvals', array_filter(['company_id' => $returnCompanyId])),
     };
+    $approvalStatusLabel = fn ($status) => [
+        'approved' => 'Disetujui',
+        'rejected' => 'Ditolak',
+        'pending' => 'Menunggu',
+        'waiting' => 'Menunggu',
+        'not_required' => 'Tidak diperlukan',
+    ][$status] ?? ucwords(str_replace('_', ' ', (string) $status));
+    $itemStatusLabel = fn ($status) => [
+        'submitted' => 'Diajukan',
+        'logistic_checked' => 'Lolos Logistik',
+        'waiting_manager_camp' => 'Menunggu Manager Camp',
+        'ready_for_quotation' => 'Siap Harga Vendor',
+        'vendor_selected' => 'Vendor Terpilih',
+        'po_created' => 'PO Dibuat',
+        'po_issued' => 'PO Diterbitkan',
+        'rejected' => 'Ditolak',
+    ][$status] ?? ucwords(str_replace('_', ' ', (string) $status));
 @endphp
 <main class="page">
     <header class="topbar">
@@ -214,7 +250,7 @@
             <a class="button ghost" href="{{ route('purchase-requests.print', $purchaseRequest) }}" target="_blank">Cetak / PDF</a>
             <a class="button ghost" href="{{ $returnUrl }}">Kembali</a>
             @if ($approvableItems->isNotEmpty())
-                <button form="bulk-approval-form">Approve Checklist</button>
+                <button form="bulk-approval-form">Setujui Pilihan</button>
             @endif
         </div>
     </header>
@@ -230,7 +266,7 @@
         <div class="stat"><span>Total item</span><strong>{{ $purchaseRequest->items->count() }}</strong></div>
         <div class="stat"><span>Siap approval Anda</span><strong>{{ $approvableItems->count() }}</strong></div>
         <div class="stat"><span>Sudah lolos</span><strong>{{ $purchaseRequest->items->whereIn('status', ['ready_for_quotation', 'vendor_selected', 'po_created', 'po_issued'])->count() }}</strong></div>
-        <div class="stat"><span>Rejected</span><strong>{{ $purchaseRequest->items->where('status', 'rejected')->count() }}</strong></div>
+        <div class="stat"><span>Ditolak</span><strong>{{ $purchaseRequest->items->where('status', 'rejected')->count() }}</strong></div>
     </section>
 
     <section class="panel">
@@ -238,11 +274,11 @@
             <div>
                 <h2>Detail Barang Approval</h2>
             </div>
-            <div class="actions">
-                <span class="pill">{{ $purchaseRequest->status }}</span>
-                <span class="pill {{ $purchaseRequest->logistic_approval_status === 'approved' ? 'ok' : 'wait' }}">Logistik {{ $purchaseRequest->logistic_approval_status }}</span>
-                <span class="pill {{ $purchaseRequest->chief_mechanic_approval_status === 'approved' ? 'ok' : 'wait' }}">Chief Mechanic {{ $purchaseRequest->chief_mechanic_approval_status }}</span>
-                <span class="pill {{ $purchaseRequest->manager_camp_approval_status === 'approved' ? 'ok' : 'wait' }}">Manager Camp {{ $purchaseRequest->manager_camp_approval_status }}</span>
+            <div class="overview-statuses">
+                <span class="pill">{{ $itemStatusLabel($purchaseRequest->status) }}</span>
+                <span class="pill {{ $purchaseRequest->logistic_approval_status === 'approved' ? 'ok' : 'wait' }}">Logistik: {{ $approvalStatusLabel($purchaseRequest->logistic_approval_status) }}</span>
+                <span class="pill {{ $purchaseRequest->chief_mechanic_approval_status === 'approved' ? 'ok' : 'wait' }}">Chief Mechanic: {{ $approvalStatusLabel($purchaseRequest->chief_mechanic_approval_status) }}</span>
+                <span class="pill {{ $purchaseRequest->manager_camp_approval_status === 'approved' ? 'ok' : 'wait' }}">Manager Camp: {{ $approvalStatusLabel($purchaseRequest->manager_camp_approval_status) }}</span>
             </div>
         </div>
 
@@ -254,7 +290,7 @@
         <table>
             <thead>
                 <tr>
-                    <th><input type="checkbox" data-check-all aria-label="Pilih semua item siap approval"></th>
+                    <th class="checkbox-cell"><input type="checkbox" data-check-all aria-label="Pilih semua item siap approval"></th>
                     <th>Unit</th>
                     <th>Barang</th>
                     <th>Qty</th>
@@ -272,7 +308,7 @@
                     $canApprove = $canApproveLogistic || $canApproveChiefMechanic || $canApproveManagerCamp;
                 @endphp
                 <tr>
-                    <td>
+                    <td class="checkbox-cell">
                         @if ($canApprove)
                             <input form="bulk-approval-form" type="checkbox" name="request_item_ids[]" value="{{ $requestItem->id }}" data-approval-check aria-label="Pilih {{ $requestItem->inventoryItem->name }}">
                         @else
@@ -281,7 +317,7 @@
                     </td>
                     <td>{{ $requestItem->unit?->code }}<br><span class="muted">{{ $requestItem->unit?->name }}</span></td>
                     <td>
-                        {{ $requestItem->inventoryItem->name }}<br>
+                        <span class="item-title">{{ $requestItem->inventoryItem->name }}</span>
                         <span class="muted">SKU {{ $requestItem->inventoryItem->sku }}{{ $requestItem->specification ? ' - '.$requestItem->specification : '' }}</span>
                     </td>
                     <td>
@@ -294,36 +330,36 @@
                         @endif
                     </td>
                     <td>
-                        <span class="pill {{ $requestItem->status === 'rejected' ? 'bad' : (in_array($requestItem->status, ['ready_for_quotation', 'vendor_selected'], true) ? 'ok' : 'wait') }}">{{ $requestItem->status }}</span>
+                        <span class="pill {{ $requestItem->status === 'rejected' ? 'bad' : (in_array($requestItem->status, ['ready_for_quotation', 'vendor_selected'], true) ? 'ok' : 'wait') }}">{{ $itemStatusLabel($requestItem->status) }}</span>
                         @if ($requestItem->rejection_note)
-                            <div class="muted">{{ $requestItem->rejection_note }}</div>
+                            <div class="rejection-note">{{ $requestItem->rejection_note }}</div>
                         @endif
                     </td>
                     <td>
-                        <div class="actions">
-                            <span class="pill {{ $requestItem->logistic_approval_status === 'approved' ? 'ok' : ($requestItem->logistic_approval_status === 'rejected' ? 'bad' : 'wait') }}">Logistik {{ $requestItem->logistic_approval_status }}</span>
-                            <span class="pill {{ $requestItem->chief_mechanic_approval_status === 'approved' ? 'ok' : ($requestItem->chief_mechanic_approval_status === 'rejected' ? 'bad' : 'wait') }}">Chief Mechanic {{ $requestItem->chief_mechanic_approval_status }}</span>
-                            <span class="pill {{ $requestItem->manager_camp_approval_status === 'approved' ? 'ok' : ($requestItem->manager_camp_approval_status === 'rejected' ? 'bad' : 'wait') }}">Manager Camp {{ $requestItem->manager_camp_approval_status }}</span>
+                        <div class="stage-statuses">
+                            <span class="pill {{ $requestItem->logistic_approval_status === 'approved' ? 'ok' : ($requestItem->logistic_approval_status === 'rejected' ? 'bad' : 'wait') }}">Logistik: {{ $approvalStatusLabel($requestItem->logistic_approval_status) }}</span>
+                            <span class="pill {{ $requestItem->chief_mechanic_approval_status === 'approved' ? 'ok' : ($requestItem->chief_mechanic_approval_status === 'rejected' ? 'bad' : 'wait') }}">Chief Mechanic: {{ $approvalStatusLabel($requestItem->chief_mechanic_approval_status) }}</span>
+                            <span class="pill {{ $requestItem->manager_camp_approval_status === 'approved' ? 'ok' : ($requestItem->manager_camp_approval_status === 'rejected' ? 'bad' : 'wait') }}">Manager Camp: {{ $approvalStatusLabel($requestItem->manager_camp_approval_status) }}</span>
                         </div>
                     </td>
                     <td>
                         @if ($canApproveLogistic)
-                            <div class="actions">
-                                <form method="post" action="{{ route('request-items.approve-equipment', $requestItem) }}" data-confirm="Setujui {{ $requestItem->inventoryItem->name }} pada tahap Logistik?">@csrf<button>Approve</button></form>
-                                <form method="post" action="{{ route('request-items.reject-equipment', $requestItem) }}" data-confirm="Tolak {{ $requestItem->inventoryItem->name }} pada tahap Logistik?">@csrf<input type="text" name="rejection_note" minlength="3" maxlength="1000" placeholder="Alasan penolakan" required><button class="danger">Reject</button></form>
+                            <div class="row-actions">
+                                <form class="approve-form" method="post" action="{{ route('request-items.approve-equipment', $requestItem) }}" data-confirm="Setujui {{ $requestItem->inventoryItem->name }} pada tahap Logistik?">@csrf<button type="submit">Setujui</button></form>
+                                <form class="reject-form" method="post" action="{{ route('request-items.reject-equipment', $requestItem) }}" data-confirm="Tolak {{ $requestItem->inventoryItem->name }} pada tahap Logistik?">@csrf<input type="text" name="rejection_note" minlength="3" maxlength="1000" placeholder="Alasan penolakan" required><button class="danger" type="submit">Tolak</button></form>
                             </div>
                         @elseif ($canApproveChiefMechanic)
-                            <div class="actions">
-                                <form method="post" action="{{ route('request-items.approve-ppic', $requestItem) }}" data-confirm="Setujui {{ $requestItem->inventoryItem->name }} pada tahap Chief Mechanic?">@csrf<button>Approve</button></form>
-                                <form method="post" action="{{ route('request-items.reject-ppic', $requestItem) }}" data-confirm="Tolak {{ $requestItem->inventoryItem->name }} pada tahap Chief Mechanic?">@csrf<input type="text" name="rejection_note" minlength="3" maxlength="1000" placeholder="Alasan penolakan" required><button class="danger">Reject</button></form>
+                            <div class="row-actions">
+                                <form class="approve-form" method="post" action="{{ route('request-items.approve-ppic', $requestItem) }}" data-confirm="Setujui {{ $requestItem->inventoryItem->name }} pada tahap Chief Mechanic?">@csrf<button type="submit">Setujui</button></form>
+                                <form class="reject-form" method="post" action="{{ route('request-items.reject-ppic', $requestItem) }}" data-confirm="Tolak {{ $requestItem->inventoryItem->name }} pada tahap Chief Mechanic?">@csrf<input type="text" name="rejection_note" minlength="3" maxlength="1000" placeholder="Alasan penolakan" required><button class="danger" type="submit">Tolak</button></form>
                             </div>
                         @elseif ($canApproveManagerCamp)
-                            <div class="actions">
-                                <form method="post" action="{{ route('request-items.approve-manager-camp', $requestItem) }}" data-confirm="Berikan persetujuan akhir Manager Camp untuk {{ $requestItem->inventoryItem->name }}?">@csrf<button>Approve</button></form>
-                                <form method="post" action="{{ route('request-items.reject-manager-camp', $requestItem) }}" data-confirm="Tolak {{ $requestItem->inventoryItem->name }} pada tahap Manager Camp?">@csrf<input type="text" name="rejection_note" minlength="3" maxlength="1000" placeholder="Alasan penolakan" required><button class="danger">Reject</button></form>
+                            <div class="row-actions">
+                                <form class="approve-form" method="post" action="{{ route('request-items.approve-manager-camp', $requestItem) }}" data-confirm="Berikan persetujuan akhir Manager Camp untuk {{ $requestItem->inventoryItem->name }}?">@csrf<button type="submit">Setujui</button></form>
+                                <form class="reject-form" method="post" action="{{ route('request-items.reject-manager-camp', $requestItem) }}" data-confirm="Tolak {{ $requestItem->inventoryItem->name }} pada tahap Manager Camp?">@csrf<input type="text" name="rejection_note" minlength="3" maxlength="1000" placeholder="Alasan penolakan" required><button class="danger" type="submit">Tolak</button></form>
                             </div>
                         @else
-                            <span class="muted">Tidak ada aksi.</span>
+                            <span class="action-empty">Tidak ada aksi.</span>
                         @endif
                     </td>
                 </tr>

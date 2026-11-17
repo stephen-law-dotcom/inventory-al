@@ -93,6 +93,7 @@
         .bad { background: #fee7e2; color: var(--red); }
         table {
             width: 100%;
+            min-width: 820px;
             border-collapse: separate;
             border-spacing: 0;
             border: 1px solid var(--line);
@@ -119,10 +120,21 @@
         .usage-box { padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: #fbfdfe; }
         .usage-box span { display: block; color: var(--muted); font-size: 12px; font-weight: 800; }
         .usage-box strong { display: block; margin-top: 5px; font-size: 18px; font-weight: 900; }
+        .table-wrap { width: 100%; max-width: 100%; overflow-x: auto; border-radius: 8px; -webkit-overflow-scrolling: touch; }
+        .table-wrap table { display: table; max-width: none; margin: 0; overflow: visible; }
+        details.history-panel { padding: 0; }
+        .history-summary { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 18px; cursor: pointer; list-style: none; }
+        .history-summary::-webkit-details-marker { display: none; }
+        .history-summary::after { content: "+"; flex: 0 0 auto; color: var(--teal); font-size: 22px; font-weight: 900; line-height: 1; }
+        details[open] .history-summary::after { content: "-"; }
+        .history-summary:focus-visible { outline: 3px solid rgba(8, 127, 120, .22); outline-offset: -3px; }
+        .history-summary > div { min-width: 0; }
+        .history-summary p { margin-top: 3px; }
+        .history-content { padding: 0 18px 18px; }
         @media (max-width: 900px) {
             .topbar { flex-direction: column; align-items: flex-start; }
-            .stat-grid, .grid, .usage-summary { grid-template-columns: 1fr; }
-            table { display: block; overflow-x: auto; }
+            .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .grid, .usage-summary { grid-template-columns: 1fr; }
             th, td { min-width: 130px; }
         }
 
@@ -167,6 +179,14 @@
         @media (max-width: 900px) {
             .page { width: min(100% - 24px, 1180px); padding-top: 14px; }
             .panel { padding: 16px; }
+            details.history-panel { padding: 0; }
+        }
+        @media (max-width: 560px) {
+            .page { width: min(100% - 20px, 1180px); padding-top: 10px; }
+            .stat-grid { grid-template-columns: 1fr; }
+            .button { width: 100%; }
+            .history-summary { align-items: flex-start; padding: 16px; }
+            .history-content { padding: 0 16px 16px; }
         }
     </style>
 </head>
@@ -206,6 +226,7 @@
                     <div>
                         <h2>Ringkasan Pemakaian per Unit</h2>
                     </div>
+                    <span class="pill">{{ $usageLogs->groupBy('unit_id')->count() }} unit</span>
                 </div>
                 @if ($usageLogs->isNotEmpty())
                     <div class="usage-summary">
@@ -219,18 +240,21 @@
                         @endforeach
                     </div>
                 @else
-                    <div class="empty">Belum ada histori pemakaian untuk barang ini.</div>
+                    <div class="empty">Belum ada riwayat pemakaian untuk barang ini.</div>
                 @endif
             </article>
 
-            <article class="panel full">
-                <div class="panel-head">
+            <details class="panel full history-panel" open>
+                <summary class="history-summary">
                     <div>
-                        <h2>Histori Pemakaian</h2>
+                        <h2>Riwayat Pemakaian</h2>
+                        <p>Transaksi pemakaian barang oleh unit.</p>
                     </div>
-                </div>
+                    <span class="pill">{{ $usageLogs->count() }} transaksi</span>
+                </summary>
+                <div class="history-content">
                 @if ($usageLogs->isNotEmpty())
-                    <table>
+                    <div class="table-wrap"><table>
                         <thead><tr><th>Tanggal</th><th>Unit</th><th>Tipe</th><th>Qty</th><th>Operator</th><th>Lokasi</th><th>Shift/HM</th><th>Ref</th></tr></thead>
                         <tbody>
                         @foreach ($usageLogs as $usageLog)
@@ -246,20 +270,24 @@
                             </tr>
                         @endforeach
                         </tbody>
-                    </table>
+                    </table></div>
                 @else
-                    <div class="empty">Belum ada histori pemakaian untuk barang ini.</div>
+                    <div class="empty">Belum ada riwayat pemakaian untuk barang ini.</div>
                 @endif
-            </article>
+                </div>
+            </details>
 
-            <article class="panel full">
-                <div class="panel-head">
+            <details class="panel full history-panel">
+                <summary class="history-summary">
                     <div>
                         <h2>Kartu Stok Pendukung</h2>
+                        <p>Perubahan saldo barang yang tercatat di gudang.</p>
                     </div>
-                </div>
+                    <span class="pill">{{ $stockMovements->count() }} transaksi</span>
+                </summary>
+                <div class="history-content">
                 @if ($stockMovements->isNotEmpty())
-                    <table>
+                    <div class="table-wrap"><table>
                         <thead><tr><th>Waktu</th><th>Tipe</th><th>Qty</th><th>Sebelum</th><th>Sesudah</th><th>User</th></tr></thead>
                         <tbody>
                         @foreach ($stockMovements as $movement)
@@ -273,18 +301,21 @@
                             </tr>
                         @endforeach
                         </tbody>
-                    </table>
+                    </table></div>
                 @else
                     <div class="empty">Belum ada kartu stok untuk barang ini.</div>
                 @endif
-            </article>
-
-            <article class="panel full">
-                <div class="panel-head">
-                    <div><h2>Mutasi Stok Camp</h2></div>
                 </div>
+            </details>
+
+            <details class="panel full history-panel">
+                <summary class="history-summary">
+                    <div><h2>Mutasi Stok Camp</h2><p>Perubahan saldo barang pada masing-masing camp.</p></div>
+                    <span class="pill">{{ $campStockMovements->count() }} transaksi</span>
+                </summary>
+                <div class="history-content">
                 @if ($campStockMovements->isNotEmpty())
-                    <table>
+                    <div class="table-wrap"><table>
                         <thead><tr><th>Waktu</th><th>Camp</th><th>Tipe</th><th>Qty</th><th>Sebelum</th><th>Sesudah</th><th>User</th></tr></thead>
                         <tbody>
                         @foreach ($campStockMovements as $movement)
@@ -299,11 +330,12 @@
                             </tr>
                         @endforeach
                         </tbody>
-                    </table>
+                    </table></div>
                 @else
                     <div class="empty">Belum ada mutasi stock opname di camp.</div>
                 @endif
-            </article>
+                </div>
+            </details>
         </section>
     </main>
 </body>
